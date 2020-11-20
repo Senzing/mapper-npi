@@ -53,6 +53,7 @@
 #   v1.7 - 11/20/2020 - Jeff Butcher
 #        - remapped licenses and identifiers to their own features
 #        - captured the websites and emails from non-affiliate affiliation records and added to NPI provider
+#        - standardized the parameters to other senzing mappers
 #
 # ----------------------------------------------------------------------------------------------------
 import csv
