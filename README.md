@@ -8,7 +8,7 @@ Identifier (NPI) records provided by US government.
 
 
 Loading this data into Senzing requires additional features and configurations. These are contained in the
-[npi_config_updates.json](npi_config_updates.json) file.
+[npi_config_updates.g2c](npi_config_updates.g2c) file.
 
 Usage:
 
@@ -55,7 +55,7 @@ Place the the following files on a directory of your choice ...
 From your Senzing project directory ...
 
 ```console
-python3 G2ConfigTool.py <path-to-file>/npi_config_updates.json
+python3 G2ConfigTool.py <path-to-file>/npi_config_updates.g2c
 ```
 
 This will step you through the process of adding the data sources, entity types, features, attributes and other settings needed to load this watch list data into Senzing. After each command you will see a status message saying "success" or "already exists".  For instance, if you run the script twice, the second time through they will all say "already exists" which is OK.
