@@ -14,16 +14,18 @@ Usage:
 
 ```console
 python npi_mapper.py --help
-usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEDIR
+usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME]
 
 optional arguments:
   -h, --help            show this help message and exit
   -i SOURCEDIR, --sourceDir SOURCEDIR
                         directory in which the source files are located
   -f FILEPERIOD, --filePeriod FILEPERIOD
-                        the period portion of the NPPES files such as "20050523-20201108"
-  -o OUTPUTFILEDIR, --outFileDir OUTPUTFILEDIR
-                        the directory to write the JSON files to
+                        the period portion of the NPPES file naming convention such as "20050523-20201108"
+  -o OUTPUTFILEPATH, --outFileDir OUTPUTFILEPATH
+                        the file or directory to write the JSON files to
+  -l LOGFILENAME, --logFileName LOGFILENAME
+                        optional statistics output file name
 ```
 
 ## Contents
@@ -76,14 +78,23 @@ The full monthly download contains many files.   These are the ones actually use
 Then run the mapper.  Example usage:
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output 
 ```
 
-This will create the following 4 output files ...
+Because, the -o parameter only specifies a directory, the following 4 output files will be created ...
 - NPI_LOCATIONS_20050523-20201108.json
 - NPI_OFFICIALS_20050523-20201108.json
 - NPI_PROVIDERS_20050523-20201108.json
 - NPI_AFFILIATIONS_20050523-20201108.json
+
+or to create one file with all the records, specify the path and file name in the -o paramter like so ...
+
+```console
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
+```
+
+Finally, specifying the -l logFileName writes out the stats and examples of what gets mapped into Senzing.   It can be quite useful 
+during development and debugging of mapping issues.
 
 
 ### Loading into Senzing
