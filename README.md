@@ -93,7 +93,7 @@ or to create one file with all the records, specify the path and file name in th
 python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
 ```
 
-Finally, the -l logFileName write out that stats and examples of what gets mapped into Senzing.   It can be quite useful 
+Finally, specifying the -l logFileName writes out the stats and examples of what gets mapped into Senzing.   It can be quite useful 
 during development and debugging of mapping issues.
 
 
