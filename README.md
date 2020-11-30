@@ -78,19 +78,19 @@ The full monthly download contains many files.   These are the ones actually use
 Then run the mapper.  Example usage:
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output  -l npi-mapping-stats.json
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output 
 ```
 
-This will create the following 4 output files ...
+Because, the -o parameter only specifies a directory, the following 4 output files will be created ...
 - NPI_LOCATIONS_20050523-20201108.json
 - NPI_OFFICIALS_20050523-20201108.json
 - NPI_PROVIDERS_20050523-20201108.json
 - NPI_AFFILIATIONS_20050523-20201108.json
 
-or to create one file with all the records, type ...
+or to create one file with all the records, specify the path and file name in the -o paramter like so ...
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json -l npi-mapping-stats.json
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
 ```
 
 ### Loading into Senzing
