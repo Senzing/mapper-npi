@@ -14,16 +14,18 @@ Usage:
 
 ```console
 python npi_mapper.py --help
-usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEDIR
+usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME]
 
 optional arguments:
   -h, --help            show this help message and exit
   -i SOURCEDIR, --sourceDir SOURCEDIR
                         directory in which the source files are located
   -f FILEPERIOD, --filePeriod FILEPERIOD
-                        the period portion of the NPPES files such as "20050523-20201108"
-  -o OUTPUTFILEDIR, --outFileDir OUTPUTFILEDIR
-                        the directory to write the JSON files to
+                        the period portion of the NPPES file naming convention such as "20050523-20201108"
+  -o OUTPUTFILEPATH, --outFileDir OUTPUTFILEPATH
+                        the file or directory to write the JSON files to
+  -l LOGFILENAME, --logFileName LOGFILENAME
+                        optional statistics output file name
 ```
 
 ## Contents
@@ -76,7 +78,7 @@ The full monthly download contains many files.   These are the ones actually use
 Then run the mapper.  Example usage:
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output  -l npi-mapping-stats.json
 ```
 
 This will create the following 4 output files ...
@@ -85,6 +87,11 @@ This will create the following 4 output files ...
 - NPI_PROVIDERS_20050523-20201108.json
 - NPI_AFFILIATIONS_20050523-20201108.json
 
+or to create one file with all the records, type ...
+
+```console
+python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json -l npi-mapping-stats.json
+```
 
 ### Loading into Senzing
 
