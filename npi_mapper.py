@@ -119,7 +119,7 @@ def map_locations(inNPI, inName, inType):
             loc_data['BUSINESS_ADDR_LINE1'] = rsltRecord['ADDR1']
             if rsltRecord['ADDR2'] and rsltRecord['ADDR2'] != "NONE":
                 updateStat(loc_data['DATA_SOURCE'], 'ADDR_LINE2', rsltRecord['ADDR2'])
-                loc_data['BUSINES_ADDR_LINE2'] = rsltRecord['ADDR2']
+                loc_data['BUSINESS_ADDR_LINE2'] = rsltRecord['ADDR2']
             loc_data['BUSINESS_ADDR_CITY'] = rsltRecord['CITY']
             loc_data['BUSINESS_ADDR_STATE'] = rsltRecord['STATE']
             loc_data['BUSINESS_ADDR_POSTAL_CODE'] = rsltRecord['POSTAL_CODE']
