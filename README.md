@@ -6,7 +6,6 @@ The [npi_mapper.py](npi_mapper.py) python script converts the NPPES NPI Registry
 [here](https://npiregistry.cms.hhs.gov).  It is a free directory of all active National Provider
 Identifier (NPI) records provided by US government.
 
-
 Loading this data into Senzing requires additional features and configurations. These are contained in the
 [npi_config_updates.g2c](npi_config_updates.g2c) file.
 
@@ -45,7 +44,7 @@ optional arguments:
 
 ### Installation
 
-Place the the following files on a directory of your choice ...
+Place the following files on a directory of your choice ...
 
 - [npi_mapper.py](npi_mapper.py)
 - [npi_config_updates.g2c](npi_config_updates.g2c)
@@ -54,17 +53,19 @@ Place the the following files on a directory of your choice ...
 
 *Note:* This only needs to be performed one time! In fact you may want to add these configuration updates to a master configuration file for all your data sources.
 
-From your Senzing project directory ...
+From your Senzing project directory:
 
 ```console
 python3 G2ConfigTool.py <path-to-file>/npi_config_updates.g2c
 ```
 
-This will step you through the process of adding the data sources, entity types, features, attributes and other settings needed to load this watch list data into Senzing. After each command you will see a status message saying "success" or "already exists".  For instance, if you run the script twice, the second time through they will all say "already exists" which is OK.
+This will step you through the process of adding the data sources, features, attributes and any other settings needed to load this watch list data into 
+Senzing. After each command you will see a status message saying "success" or "already exists".  For instance, if you run the script twice, the second time through they will all 
+say "already exists" which is OK.
 
 ### Running the mapper
 
-Download the raw files from ... [https://download.cms.gov/nppes/NPI_Files.html](https://download.cms.gov/nppes/NPI_Files.html)
+Download the raw files from: [https://download.cms.gov/nppes/NPI_Files.html](https://download.cms.gov/nppes/NPI_Files.html)
 
 The full monthly download contains many files.   These are the ones actually used by this mapper ...
 
@@ -81,7 +82,7 @@ Then run the mapper.  Example usage:
 python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output 
 ```
 
-Because, the -o parameter only specifies a directory, the following 4 output files will be created ...
+Because, the -o parameter only specifies a directory, the following 4 output files will be created:
 - NPI_LOCATIONS_20050523-20201108.json
 - NPI_OFFICIALS_20050523-20201108.json
 - NPI_PROVIDERS_20050523-20201108.json
@@ -99,7 +100,7 @@ during development and debugging of mapping issues.
 
 ### Loading into Senzing
 
-If you use the G2Loader program to load your data, from your project directory ...
+If you use the G2Loader program to load your data, from your project directory:
 
 ```console
 python3 G2Loader.py -f ./output/NPI_LOCATIONS_20050523-20201108.json
@@ -121,7 +122,7 @@ If you use the API directly, then you just need to perform an addRecord() for ea
 
 ### Mapping other data sources
 
-While not required, look the following identifiers in your other data sets..
+While not required, look for the following identifiers in your other data sets:
 - NPI number
 - Other provider licenses issued by states
 - Medicare provider IDs
