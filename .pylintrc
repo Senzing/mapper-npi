@@ -1,0 +1,33 @@
+[pylint]
+disable=
+    bad-indentation,
+    consider-using-f-string,
+    consider-using-with,
+    global-at-module-level,
+    global-statement,
+    global-variable-not-assigned,
+    import-error,
+    invalid-name,
+    line-too-long,
+    missing-function-docstring,
+    missing-module-docstring,
+    redefined-outer-name,
+    superfluous-parens,
+    too-many-arguments,
+    too-many-branches,
+    too-many-locals,
+    too-many-statements,
+    trailing-whitespace,
+    undefined-variable,
+    unspecified-encoding,
+    unused-argument,
+    unused-variable,
+    useless-return,
+    using-constant-test,
+    wrong-import-order,
+good-names=
+    template-python
+ignore=
+    __init__.py,
+notes=
+    FIXME,
