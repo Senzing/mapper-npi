@@ -101,7 +101,6 @@ def map_locations(inNPI, inName, inType):
         loc_data = {}
         loc_data['DATA_SOURCE'] = 'NPI-LOCATIONS'
         loc_data['RECORD_ID'] = str(inNPI) + '-' + str(cntr)
-        loc_data['ENTITY_TYPE'] = 'GENERIC'
         loc_data['RECORD_TYPE'] = 'ORGANIZATION'
         updateStat('DATA_SOURCES', loc_data['DATA_SOURCE'])
         updateStat(loc_data['DATA_SOURCE'], loc_data['RECORD_TYPE'])
@@ -179,7 +178,6 @@ def map_endpoints(inNPI):
         if rsltRecord['IS_AFFILIATE'] == 'Y':
             ep_data['DATA_SOURCE'] = 'NPI-AFFILIATIONS'
             ep_data['RECORD_ID'] = str(inNPI) + '-' + str(cntr)
-            ep_data['ENTITY_TYPE'] = 'GENERIC'
             ep_data['RECORD_TYPE'] = 'ORGANIZATION'
             updateStat('DATA_SOURCES', ep_data['DATA_SOURCE'])
             updateStat(ep_data['DATA_SOURCE'], ep_data['RECORD_TYPE'])
@@ -286,7 +284,6 @@ def map_auth(input_row, npi_name):
 
     # --required attributes
     auth_data['DATA_SOURCE'] = 'NPI-OFFICIALS'
-    auth_data['ENTITY_TYPE'] = 'GENERIC'
     auth_data['RECORD_ID'] = input_row['NPI'] + '-AUTH'
     auth_data['RECORD_TYPE'] = 'PERSON'
     updateStat('DATA_SOURCES', auth_data['DATA_SOURCE'])
@@ -333,7 +330,6 @@ def map_npi(input_row):
 
     # --required attributes
     json_data['DATA_SOURCE'] = 'NPI-PROVIDERS'
-    json_data['ENTITY_TYPE'] = 'GENERIC'
     json_data['RECORD_ID'] = input_row['NPI']
     if input_row['Entity Type Code'] == '1':
         json_data['RECORD_TYPE'] = 'PERSON'
