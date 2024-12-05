@@ -16,6 +16,7 @@ disable=
     too-many-arguments,
     too-many-branches,
     too-many-locals,
+    too-many-positional-arguments,
     too-many-statements,
     trailing-whitespace,
     undefined-variable,
