@@ -1,0 +1,38 @@
+{
+  // Version of the setting file.  Always 0.2
+  "version": "0.2",
+  // language - current active spelling language
+  "language": "en",
+  // words - list of words to be always considered correct
+  "words": [
+    "analysing",
+    "CCLA",
+    "cntr",
+    "CODEOWNER",
+    "FILEPERIOD",
+    "GRPS",
+    "ICLA",
+    "Iinput",
+    "jsondata",
+    "LOGFILENAME",
+    "mypy",
+    "npidata",
+    "NPPES",
+    "othername",
+    "Othernames",
+    "OUTPUTFILEPATH",
+    "parms",
+    "pylint",
+    "rslt",
+    "Senzing",
+    "shellcheck",
+    "SOURCEDIR",
+    "stackoverflow",
+    "Taxy",
+    "txnmy"
+  ],
+  "ignorePaths": [
+    ".git/**",
+    ".mypy_cache/**"
+  ]
+}
