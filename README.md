@@ -135,7 +135,7 @@ While not required, look for the following identifiers in your other data sets:
 [Installation]: #installation
 [Loading into Senzing]: #loading-into-senzing
 [Mapping other data sources]: #mapping-other-data-sources
-[npi_config_updates.g2c]: npi_config_updates.g2c
-[npi_mapper.py]: npi_mapper.py
+[npi_config_updates.g2c]: src/npi_config_updates.g2c
+[npi_mapper.py]: src/npi_mapper.py
 [Prerequisites]: #prerequisites
 [Running the mapper]: #running-the-mapper
