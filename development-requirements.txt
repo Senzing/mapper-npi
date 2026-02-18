@@ -10,7 +10,7 @@ mypy==1.19.1
 psutil==7.2.2
 pylint-per-file-ignores==1.4.0
 pylint==4.0.4
-pytest-cov==6.2.1
+pytest-cov==7.0.0
 pytest-schema==0.1.2
 pytest==9.0.2
 twine==6.1.0
