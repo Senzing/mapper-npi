@@ -1,7 +1,7 @@
 autodocsumm==0.2.14
 myst_parser==5.0.0
 sphinx
-sphinx-autodoc-typehints==3.9.10
+sphinx-autodoc-typehints==3.9.11
 sphinx-gallery==0.20.0
 sphinx-jinja2-compat==0.4.1
 sphinx-prompt==1.10.2
