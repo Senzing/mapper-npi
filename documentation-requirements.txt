@@ -1,4 +1,4 @@
-autodocsumm==0.2.14
+autodocsumm==0.2.15
 myst_parser==5.0.0
 sphinx
 sphinx-autodoc-typehints==3.9.11
