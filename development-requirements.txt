@@ -15,4 +15,4 @@ pytest-schema==0.1.2
 pytest==9.0.3
 twine==6.2.0
 virtualenv==21.2.4
-wheel==0.46.3
+wheel==0.47.0
