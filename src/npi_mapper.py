@@ -675,11 +675,14 @@ def map_npi(input_row):
         ]
 
     #  GENDER
-    if input_row["Provider Gender Code"]:
-        updateStat(
-            json_data["DATA_SOURCE"], "GENDER", input_row["Provider Gender Code"]
-        )
-        json_data["GENDER"] = input_row["Provider Gender Code"]
+    #  NPPES renamed "Provider Gender Code" to "Provider Sex Code" (2025+ dissemination files);
+    #  accept either so both current and older files map.
+    sex_code = input_row.get("Provider Sex Code")
+    if sex_code is None:
+        sex_code = input_row.get("Provider Gender Code", "")
+    if sex_code:
+        updateStat(json_data["DATA_SOURCE"], "GENDER", sex_code)
+        json_data["GENDER"] = sex_code
 
     #  Provider License Numbers, Taxonomy Codes, and Taxonomy Groups (1-15) are mapped if available
     #  Provider License Numbers are NOT mapped as payload, the rest are
