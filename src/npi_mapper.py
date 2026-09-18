@@ -80,6 +80,43 @@ def is_placeholder_name(value):
     return value is None or str(value).strip().upper() in NAME_PLACEHOLDERS
 
 
+# Sub-lists whose contents are custom identifier features (npi_config_updates.g2c); their element
+# semantics are configuration decisions and are emitted exactly as mapped.
+IDENTIFIER_SUBLISTS = ("PROVIDER_IDS", "PROVIDER_LICENSE_NUMS")
+
+
+def drop_empty_attributes(record):
+    """Remove attributes whose value is None or an empty/blank string so no empty feature is emitted.
+
+    Applies to root scalars and to the objects inside feature sub-lists (except IDENTIFIER_SUBLISTS);
+    a sub-object or sub-list that becomes empty is removed as well.
+    """
+
+    def is_empty(value):
+        return value is None or (isinstance(value, str) and value.strip() == "")
+
+    for key in list(record.keys()):
+        value = record[key]
+        if isinstance(value, list):
+            if key in IDENTIFIER_SUBLISTS:
+                continue
+            cleaned = []
+            for item in value:
+                if isinstance(item, dict):
+                    item = {k: v for k, v in item.items() if not is_empty(v)}
+                    if item:
+                        cleaned.append(item)
+                elif not is_empty(item):
+                    cleaned.append(item)
+            if cleaned:
+                record[key] = cleaned
+            else:
+                del record[key]
+        elif is_empty(value):
+            del record[key]
+    return record
+
+
 # -------------------------------------------------------------
 #  Map Provider Locations Reference file for this NPI
 # -------------------------------------------------------------
@@ -148,7 +185,7 @@ def map_locations(inNPI, inName, inType):
         loc_data["REL_POINTER_KEY"] = inNPI
         loc_data["REL_POINTER_ROLE"] = "Secondary Location"
 
-        Locations_outFile.write(json.dumps(loc_data) + "\n")
+        Locations_outFile.write(json.dumps(drop_empty_attributes(loc_data)) + "\n")
         JSON_row_count += 1
         NPILocations_row_count += 1
 
@@ -246,7 +283,7 @@ def map_endpoints(inNPI):
 
         # --jb: write it out to affiliate file
         if rsltRecord["IS_AFFILIATE"] == "Y":
-            Affiliations_outFile.write(json.dumps(ep_data) + "\n")
+            Affiliations_outFile.write(json.dumps(drop_empty_attributes(ep_data)) + "\n")
             JSON_row_count += 1
             NPIAffiliations_row_count += 1
 
@@ -362,7 +399,7 @@ def map_auth(input_row, npi_name):
     auth_data["REL_POINTER_DOMAIN"] = "NPI"
     auth_data["REL_POINTER_ROLE"] = "Authorized Official"
 
-    return json.dumps(auth_data)
+    return json.dumps(drop_empty_attributes(auth_data))
 
 
 #
@@ -381,12 +418,16 @@ def map_npi(input_row):
     # --required attributes
     json_data["DATA_SOURCE"] = "NPI-PROVIDERS"
     json_data["RECORD_ID"] = input_row["NPI"]
-    if input_row["Entity Type Code"] == "1":
+    # Entity Type Code 1 = individual, 2 = organization. Deactivated NPIs are disseminated with the
+    # code and every name/address field blank: leave RECORD_TYPE unset for them (Entity Spec: include
+    # when known, leave blank if unknown) instead of defaulting them to ORGANIZATION.
+    entity_type = input_row["Entity Type Code"]
+    if entity_type == "1":
         json_data["RECORD_TYPE"] = "PERSON"
-    else:
+    elif entity_type == "2":
         json_data["RECORD_TYPE"] = "ORGANIZATION"
     updateStat("DATA_SOURCES", json_data["DATA_SOURCE"])
-    updateStat(json_data["DATA_SOURCE"], json_data["RECORD_TYPE"])
+    updateStat(json_data["DATA_SOURCE"], json_data.get("RECORD_TYPE", "RECORD_TYPE-UNKNOWN (Entity Type Code blank)"))
 
     # --attributes used for resolution
     # NPI (s): the record's own NPI and, when a deactivated NPI was replaced, the replacement NPI.
@@ -408,7 +449,8 @@ def map_npi(input_row):
     json_data["REL_ANCHOR_DOMAIN"] = "NPI"
 
     # Names
-    if input_row["Entity Type Code"] == "1":
+    npi_name = ""
+    if entity_type == "1":
         json_data["PRIMARY_NAME_LAST"] = input_row["Provider Last Name (Legal Name)"]
         npi_name = input_row["Provider Last Name (Legal Name)"]
         json_data["PRIMARY_NAME_FIRST"] = input_row["Provider First Name"]
@@ -424,7 +466,7 @@ def map_npi(input_row):
             json_data["PRIMARY_NAME_PREFIX"] = input_row["Provider Name Prefix Text"]
         if input_row["Provider Name Suffix Text"]:
             json_data["PRIMARY_NAME_SUFFIX"] = input_row["Provider Name Suffix Text"]
-    else:
+    elif entity_type == "2":
         json_data["PRIMARY_NAME_ORG"] = input_row[
             "Provider Organization Name (Legal Business Name)"
         ]
@@ -941,7 +983,7 @@ def map_npi(input_row):
     if endpointList:
         json_data["ENDPOINT_LIST"] = endpointList
 
-    return json.dumps(json_data)
+    return json.dumps(drop_empty_attributes(json_data))
 
 
 # -------------------------------------------------------------
