@@ -934,8 +934,17 @@ def loadDB(inFileSpec, inTabName):
     msgOut(
         0, "  Populating " + inTabName + " DB Table from reference file ", "I", "", 0, 0
     )
+    # dtype=str keeps every column TEXT in sqlite: pandas otherwise infers int64/float64 for
+    # postal codes, phone/fax numbers and type codes, which drops leading zeros ("061051719" ->
+    # 61051719), renders faxes as floats (8607148439.0) and breaks string comparisons on codes.
+    # keep_default_na=False keeps blank cells as "" instead of NaN/NULL.
     df = pandas.read_csv(
-        inFileSpec, low_memory=False, encoding="latin-1", quotechar='"'
+        inFileSpec,
+        low_memory=False,
+        encoding="latin-1",
+        quotechar='"',
+        dtype=str,
+        keep_default_na=False,
     )
     df.to_sql(inTabName, conn, if_exists="replace")
     msgOut(0, "        Building " + inTabName + ".NPI Index", "I", "", 0, 0)
