@@ -65,7 +65,9 @@ import argparse
 import datetime
 import time
 import os
+import shutil
 import sys
+import tempfile
 import pandas
 import sqlite3
 import signal
@@ -1155,6 +1157,14 @@ if __name__ == "__main__":
         default="",
         help="optional statistics output file name",
     )
+    argParser.add_argument(
+        "-w",
+        "--workDir",
+        dest="workDir",
+        default="",
+        help="optional local directory for the temporary NPPES.db sqlite file (default: a fresh system temp directory; "
+        "never the source directory, which may be a shared/read-only mount)",
+    )
     parms = argParser.parse_args()
 
     if (parms.filePeriod and len(parms.filePeriod) > 0) and (
@@ -1405,7 +1415,16 @@ if __name__ == "__main__":
     idValuesToIgnore["NONE"] = True
 
     # --   open database connection and load from csv
-    dbname = parms.sourceDir + "/NPPES.db"
+    #      The temp sqlite DB lives in a local working directory, not next to the (possibly shared or
+    #      read-only) source files. A fresh mkdtemp directory is used unless -w is given.
+    if parms.workDir:
+        workDir = os.path.abspath(parms.workDir)
+        os.makedirs(workDir, exist_ok=True)
+        workDirIsTemp = False
+    else:
+        workDir = tempfile.mkdtemp(prefix="npi_mapper_")
+        workDirIsTemp = True
+    dbname = os.path.join(workDir, "NPPES.db")
     dbExists = os.path.exists(dbname)
     if dbExists:  # --purge and reload
         msgOut(
@@ -1471,6 +1490,13 @@ if __name__ == "__main__":
         Affiliations_outFile.close()
         Locations_outFile.close()
         Officials_outFile.close()
+
+    # --remove the temporary reference DB (and its directory when we created it)
+    conn.close()
+    if workDirIsTemp:
+        shutil.rmtree(workDir, ignore_errors=True)
+    elif os.path.exists(dbname):
+        os.remove(dbname)
 
     msgOut(
         0,
