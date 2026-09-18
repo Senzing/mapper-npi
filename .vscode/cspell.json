@@ -31,8 +31,10 @@
     "shellcheck",
     "SOURCEDIR",
     "stackoverflow",
+    "SUBLISTS",
     "Taxy",
     "txnmy",
+    "UNAVAIL",
     "venv"
   ],
   "ignorePaths": [

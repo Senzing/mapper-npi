@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Read `Provider Sex Code` (NPPES renamed `Provider Gender Code`), falling back to the old name; the mapper
   previously raised `KeyError` on the first row of 2025+ dissemination files and produced no output.
 - Load the othername/pl/endpoint reference files as strings: postal codes, phone and fax numbers were emitted
-  as JSON ints/floats, dropping leading-zero ZIP codes and rendering faxes as `nnnnnnnnnn.0`.
+  as JSON integers/floats, dropping leading-zero ZIP codes and rendering faxes as `nnnnnnnnnn.0`.
 - Emit DBA/former/other organization names from `othername_pfile`; an int-vs-string type-code comparison had
   silently dropped every row. NPPES placeholder `<UNAVAIL>` is filtered alongside `NONE`.
 - Map `Replacement NPI` as a second `NPI_NUMBER` value (`NPI_NUMBERS` sub-list) instead of the unregistered
