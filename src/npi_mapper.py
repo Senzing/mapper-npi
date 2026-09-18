@@ -17,10 +17,10 @@
 #                   -  RECORD_ID: NPI
 #   NPI-OFFICIALS   -  Authorized Personnel for the NPI
 #   NPI-AFFILIATIONS-  Endpoint data with Email and Address
-#                   -  RECORD_ID: NPI-#   where # is 1-n.. incremented for each line for this NPI
+#                   -  RECORD_ID: NPI-<hash>  deterministic sha1 prefix of the affiliation's source fields
 #                   -  Anchored back to NPI
 #   NPI-LOCATIONS   -  Provider Locations date with address & Phone for these secondary locations
-#                   -  RECORD_ID: NPI-#   where # is 1-n.. incremented for each line for this NPI
+#                   -  RECORD_ID: NPI-<hash>  deterministic sha1 prefix of the location's source fields
 #                   -  Anchored back to NPI
 #
 # Maintenance Log:
@@ -59,6 +59,7 @@
 #
 # ----------------------------------------------------------------------------------------------------
 import csv
+import hashlib
 import json
 import argparse
 import datetime
@@ -117,14 +118,24 @@ def drop_empty_attributes(record):
     return record
 
 
+def derived_record_id(npi, *parts):
+    """Deterministic RECORD_ID for a child record: <NPI>-<12 hex of sha1 over its source fields>.
+
+    Entity Spec: RECORD_ID is used for add/replace and must be stable, so it is derived from the
+    record's own field values, never from the position of the row in the reference file. The parts
+    are exactly the columns of the `select distinct` that produced the row, so distinct rows for one
+    NPI always get distinct ids.
+    """
+    key = "|".join("" if p is None else str(p) for p in parts)
+    return str(npi) + "-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+
+
 # -------------------------------------------------------------
 #  Map Provider Locations Reference file for this NPI
 # -------------------------------------------------------------
 def map_locations(inNPI, inName, inType):
     global NPILocations_row_count
     global JSON_row_count
-
-    cntr = 0
 
     sql = "select distinct "
     sql += ' "Provider Secondary Practice Location Address- Address Line 1"                  as ADDR1,'
@@ -142,12 +153,11 @@ def map_locations(inNPI, inName, inType):
     hdr1 = [col[0] for col in plObj.description]
     resultRow = cursor1.fetchone()
     while resultRow:
-        cntr += 1
         rsltRecord = dict(zip(hdr1, resultRow))
 
         loc_data = {}
         loc_data["DATA_SOURCE"] = "NPI-LOCATIONS"
-        loc_data["RECORD_ID"] = str(inNPI) + "-" + str(cntr)
+        loc_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
         loc_data["RECORD_TYPE"] = "ORGANIZATION"
         updateStat("DATA_SOURCES", loc_data["DATA_SOURCE"])
         updateStat(loc_data["DATA_SOURCE"], loc_data["RECORD_TYPE"])
@@ -204,8 +214,6 @@ def map_endpoints(inNPI):
         []
     )  # --jb: for emails and websites that belong to the NPI, not affiliates
 
-    cntr = 0
-
     sql = "select distinct "
     sql += ' "Affiliation"                      as IS_AFFILIATE,'  # --jb: added
     sql += ' "Endpoint"                         as ENDPOINT,'
@@ -224,12 +232,11 @@ def map_endpoints(inNPI):
     resultRow = cursor1.fetchone()
     while resultRow:
         rsltRecord = dict(zip(hdr1, resultRow))
-        cntr += 1
         ep_data = {}
 
         if rsltRecord["IS_AFFILIATE"] == "Y":
             ep_data["DATA_SOURCE"] = "NPI-AFFILIATIONS"
-            ep_data["RECORD_ID"] = str(inNPI) + "-" + str(cntr)
+            ep_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
             ep_data["RECORD_TYPE"] = "ORGANIZATION"
             updateStat("DATA_SOURCES", ep_data["DATA_SOURCE"])
             updateStat(ep_data["DATA_SOURCE"], ep_data["RECORD_TYPE"])
