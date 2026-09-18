@@ -389,11 +389,19 @@ def map_npi(input_row):
     updateStat(json_data["DATA_SOURCE"], json_data["RECORD_TYPE"])
 
     # --attributes used for resolution
-    # NPI (s)
-    json_data["NPI_NUMBER"] = input_row["NPI"]
-    if input_row["Replacement NPI"]:
+    # NPI (s): the record's own NPI and, when a deactivated NPI was replaced, the replacement NPI.
+    # Both are the same registered Senzing feature, NPI_NUMBER (Entity Spec "Identifiers > Feature:
+    # NPI_NUMBER"); the former REPL_NPI_NUMBER attribute is not registered and was silently treated
+    # as payload. In this mapper's flat record shape a feature with several values is carried in a
+    # per-feature sub-list (Entity Spec "Recommended JSON Schema", flat structure still supported).
+    npi_numbers = [{"NPI_NUMBER": input_row["NPI"]}]
+    if input_row["Replacement NPI"] and input_row["Replacement NPI"] != input_row["NPI"]:
         updateStat(json_data["DATA_SOURCE"], "REPL-NPI", input_row["Replacement NPI"])
-        json_data["REPL_NPI_NUMBER"] = input_row["Replacement NPI"]
+        npi_numbers.append({"NPI_NUMBER": input_row["Replacement NPI"]})
+    if len(npi_numbers) == 1:
+        json_data["NPI_NUMBER"] = input_row["NPI"]
+    else:
+        json_data["NPI_NUMBERS"] = npi_numbers
 
     #  define anchor point for disclosed relationships back to this NPI from NPI-LOCATIONS, NPI-AFFILIATES, and NPI-OFFICIALS
     json_data["REL_ANCHOR_KEY"] = input_row["NPI"]
