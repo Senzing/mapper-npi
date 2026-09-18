@@ -70,6 +70,15 @@ import sqlite3
 import signal
 import random
 
+# NPPES placeholder values that appear in name fields and must never be emitted as a name.
+# "<UNAVAIL>" arrives with the undocumented "Provider Other Organization Name Type Code" 6.
+NAME_PLACEHOLDERS = {"", "NONE", "<UNAVAIL>"}
+
+
+def is_placeholder_name(value):
+    """True when a name field is blank or holds an NPPES placeholder rather than a real name."""
+    return value is None or str(value).strip().upper() in NAME_PLACEHOLDERS
+
 
 # -------------------------------------------------------------
 #  Map Provider Locations Reference file for this NPI
@@ -257,11 +266,7 @@ def map_othernames(inNPI):
     sql = "select distinct "
     sql += ' "Provider Other Organization Name"            as name1,'
     sql += ' "Provider Other Organization Name Type Code"  as typCd'
-    sql += (
-        " from OTHERNAME where NPI = '"
-        + str(inNPI)
-        + "' and \"Provider Other Organization Name\" <> 'NONE'"
-    )
+    sql += " from OTHERNAME where NPI = '" + str(inNPI) + "'"
 
     onObj = conn.cursor()
     onCur = onObj.execute(sql)
@@ -269,17 +274,25 @@ def map_othernames(inNPI):
     resultRow = onCur.fetchone()
     while resultRow:
         rsltRecord = dict(zip(hdr1, resultRow))
-        if rsltRecord["name1"] and rsltRecord["name1"] not in oNames_Mapped:
+        # The type code may come back from sqlite as int or str depending on column affinity;
+        # compare as a stripped string so the branches below match either way.
+        typCd = "" if rsltRecord["typCd"] is None else str(rsltRecord["typCd"]).strip()
+        if (
+            not is_placeholder_name(rsltRecord["name1"])
+            and rsltRecord["name1"] not in oNames_Mapped
+        ):
             oNames_Mapped[rsltRecord["name1"]] = True
-            if rsltRecord["typCd"] == "3":  # DBA
-                updateStat("NPI-PROVIDER", "NAME-DBA", rsltRecord["name1"])
+            if typCd == "3":  # DBA
+                updateStat("NPI-PROVIDERS", "NAME-DBA", rsltRecord["name1"])
                 oNames.append({"DBA_NAME_ORG": rsltRecord["name1"]})
-            elif rsltRecord["typCd"] == "4":  # Former Bus name
-                updateStat("NPI-PROVIDER", "NAME-FORMER", rsltRecord["name1"])
+            elif typCd == "4":  # Former Bus name
+                updateStat("NPI-PROVIDERS", "NAME-FORMER", rsltRecord["name1"])
                 oNames.append({"FORMER_NAME_ORG": rsltRecord["name1"]})
-            elif rsltRecord["typCd"] == "5":  # Other
-                updateStat("NPI-PROVIDER", "NAME-OTHER", rsltRecord["name1"])
+            elif typCd == "5":  # Other
+                updateStat("NPI-PROVIDERS", "NAME-OTHER", rsltRecord["name1"])
                 oNames.append({"OTHER_NAME_ORG": rsltRecord["name1"]})
+            else:
+                updateStat("NPI-PROVIDERS", "NAME-OTHERNAME-UNKNOWN-TYPE-" + typCd, rsltRecord["name1"])
 
         resultRow = onCur.fetchone()
 
@@ -410,10 +423,7 @@ def map_npi(input_row):
         npi_name = input_row["Provider Organization Name (Legal Business Name)"]
         updateStat(json_data["DATA_SOURCE"], "NAME_ORG-PRIMARY", npi_name)
 
-    if (
-        input_row["Provider Other Organization Name"]
-        and input_row["Provider Other Organization Name"] != "NONE"
-    ):
+    if not is_placeholder_name(input_row["Provider Other Organization Name"]):
         if input_row["Provider Other Organization Name Type Code"] == "3":  # DBA
             json_data["DBA_NAME_ORG"] = input_row["Provider Other Organization Name"]
             updateStat(
@@ -444,11 +454,11 @@ def map_npi(input_row):
                 input_row["Provider Other Organization Name"],
             )
 
-    if input_row["Provider Other Last Name"] == "NONE":
+    if is_placeholder_name(input_row["Provider Other Last Name"]):
         input_row["Provider Other Last Name"] = ""
-    if input_row["Provider Other First Name"] == "NONE":
+    if is_placeholder_name(input_row["Provider Other First Name"]):
         input_row["Provider Other First Name"] = ""
-    if input_row["Provider Other Middle Name"] == "NONE":
+    if is_placeholder_name(input_row["Provider Other Middle Name"]):
         input_row["Provider Other Middle Name"] = ""
 
     if (
