@@ -149,6 +149,7 @@ def map_locations(inNPI, inName, inType):
     sql += ' "Provider Secondary Practice Location Address - Telephone Number"               as PH1,'
     sql += ' "Provider Practice Location Address - Fax Number"                               as PH2'
     sql += " from PL where pl.NPI = '" + str(inNPI) + "'"
+    sql += " order by 1,2,3,4,5,6,7,8"  # deterministic output order across runs and reference-file row orders
 
     plObj = conn.cursor()
     cursor1 = plObj.execute(sql)
@@ -227,6 +228,7 @@ def map_endpoints(inNPI):
     sql += ' "Affiliation Address Country"      as COUNTRY,'
     sql += ' "Affiliation Address Postal Code"  as POSTAL_CODE'
     sql += " From ENDPOINT where NPI = '" + str(inNPI) + "'"
+    sql += " order by 1,2,3,4,5,6,7,8,9"  # deterministic output order across runs and reference-file row orders
 
     epObj = conn.cursor()
     cursor1 = epObj.execute(sql)
@@ -313,6 +315,7 @@ def map_othernames(inNPI):
     sql += ' "Provider Other Organization Name"            as name1,'
     sql += ' "Provider Other Organization Name Type Code"  as typCd'
     sql += " from OTHERNAME where NPI = '" + str(inNPI) + "'"
+    sql += " order by 1,2"  # deterministic output order across runs and reference-file row orders
 
     onObj = conn.cursor()
     onCur = onObj.execute(sql)
