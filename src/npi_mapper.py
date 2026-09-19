@@ -83,41 +83,105 @@ def is_placeholder_name(value):
     return value is None or str(value).strip().upper() in NAME_PLACEHOLDERS
 
 
-# Sub-lists whose contents are custom identifier features (npi_config_updates.g2c); their element
-# semantics are configuration decisions and are emitted exactly as mapped.
-IDENTIFIER_SUBLISTS = ("PROVIDER_IDS", "PROVIDER_LICENSE_NUMS")
+def is_deactivated(input_row):
+    """True when this NPI is CURRENTLY deactivated: a deactivation date and no reactivation date.
+
+    ONE definition, used both to stamp the DATA_SOURCE in map_npi and to route the record to the
+    NPI_DEACTIVE output file, so the source a record claims and the file it lands in cannot drift.
+    See the comment in map_npi for the measured population and why these get their own source.
+    """
+    return bool(input_row["NPI Deactivation Date"].strip()) and not bool(
+        input_row["NPI Reactivation Date"].strip()
+    )
+
+
+# Elements that only LABEL a feature instance (its usage type). An object holding nothing but a
+# label describes no value, so it is never emitted.
+FEATURE_LABEL_ELEMENTS = ("NAME_TYPE", "ADDR_TYPE", "PHONE_TYPE")
+
+
+def is_empty_value(value):
+    """True when a mapped value is absent or blank and must therefore not be emitted."""
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+def clean_feature(feature):
+    """Strip empty elements from one FEATURES object; return None if nothing substantive remains.
+
+    Entity Spec: never emit "KEY": "". A leftover that is only a usage-type label (an ADDR_TYPE with
+    no address, say) describes nothing, so it is dropped as well.
+    """
+    cleaned = {k: v for k, v in feature.items() if not is_empty_value(v)}
+    if not cleaned or all(k in FEATURE_LABEL_ELEMENTS for k in cleaned):
+        return None
+    return cleaned
+
+
+def add_feature(features, feature):
+    """Append one cleaned feature object to a record's FEATURES list, skipping an empty one.
+
+    Entity Spec "Recommended JSON Schema": one object per feature INSTANCE. A feature with several
+    values becomes several objects in FEATURES -- never a nested per-feature sub-list, which the
+    tooling treats as opaque payload and does not examine.
+    """
+    cleaned = clean_feature(feature)
+    if cleaned:
+        features.append(cleaned)
+    return cleaned
+
+
+def add_phone(features, number, phone_type=None):
+    """Append one PHONE object, de-duplicated by (PHONE_TYPE, PHONE_NUMBER).
+
+    Entity Spec (Contact methods > Feature: PHONE): one PHONE object per number, and include
+    PHONE_TYPE only when the source provides it. NPPES reports the same number as both the mailing
+    and the practice-location telephone on many records, so a repeat is dropped rather than emitted
+    twice. A plain telephone gets NO type: MOBILE is the only phone label that carries weight to the
+    engine and NPPES publishes no mobile numbers, so WORK/BUSINESS would be a label we invented.
+    FAX is kept because it is a distinction the source itself draws.
+    """
+    phone = {}
+    if phone_type:
+        phone["PHONE_TYPE"] = phone_type
+    phone["PHONE_NUMBER"] = number
+    cleaned = clean_feature(phone)
+    if not cleaned or cleaned in features:
+        return None
+    features.append(cleaned)
+    return cleaned
 
 
 def drop_empty_attributes(record):
-    """Remove attributes whose value is None or an empty/blank string so no empty feature is emitted.
+    """Remove root attributes that are None/blank and clean every object in FEATURES.
 
-    Applies to root scalars and to the objects inside feature sub-lists (except IDENTIFIER_SUBLISTS);
-    a sub-object or sub-list that becomes empty is removed as well.
+    DATA_SOURCE, RECORD_ID and the payload attributes live at the record root; every resolution
+    feature lives in FEATURES, one object per instance. A feature object that has no substantive
+    element left is removed, and FEATURES itself is removed if nothing is left in it.
     """
-
-    def is_empty(value):
-        return value is None or (isinstance(value, str) and value.strip() == "")
-
     for key in list(record.keys()):
         value = record[key]
         if isinstance(value, list):
-            if key in IDENTIFIER_SUBLISTS:
-                continue
-            cleaned = []
-            for item in value:
-                if isinstance(item, dict):
-                    item = {k: v for k, v in item.items() if not is_empty(v)}
-                    if item:
-                        cleaned.append(item)
-                elif not is_empty(item):
-                    cleaned.append(item)
+            cleaned = [f for f in (clean_feature(item) for item in value) if f]
             if cleaned:
                 record[key] = cleaned
             else:
                 del record[key]
-        elif is_empty(value):
+        elif is_empty_value(value):
             del record[key]
     return record
+
+
+#  NPPES "Provider Other Last Name Type Code" -> the NAME_TYPE of that other name.
+#  Source: NPPES Data Dissemination code values ("Other Provider Name Type Code"):
+#      1 Former Name   2 Professional Name   3 Doing Business As   5 Other Name
+#  Code 4 is not defined for a person name; a blank/undefined code, or any code with no last name,
+#  is counted as UNKNOWN and no name feature is emitted for it.
+OTHER_LAST_NAME_TYPE_CODES = {
+    "1": "FORMER",
+    "2": "PROFESSIONAL",
+    "3": "DBA",
+    "5": "OTHER",
+}
 
 
 #  NPPES "Other Provider Identifier Type Code" -> issuer name.
@@ -188,44 +252,55 @@ def map_locations(inNPI, inName, inType):
         rsltRecord = dict(zip(hdr1, resultRow))
 
         loc_data = {}
+        loc_features = []
         loc_data["DATA_SOURCE"] = "NPI-LOCATIONS"
         loc_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
-        loc_data["RECORD_TYPE"] = "ORGANIZATION"
+        loc_data["FEATURES"] = loc_features
+        add_feature(loc_features, {"RECORD_TYPE": "ORGANIZATION"})
         updateStat("DATA_SOURCES", loc_data["DATA_SOURCE"])
-        updateStat(loc_data["DATA_SOURCE"], loc_data["RECORD_TYPE"])
+        updateStat(loc_data["DATA_SOURCE"], "ORGANIZATION")
 
         if (
             False
         ):  # --cannot reliably say this is the name of the organization at that location
             if inType == "1":
-                loc_data["PRIMARY_NAME_FULL"] = inName
+                add_feature(loc_features, {"NAME_TYPE": "PRIMARY", "NAME_FULL": inName})
                 updateStat(loc_data["DATA_SOURCE"], "NAME_FULL(PERSON)", inName)
             else:
-                loc_data["PRIMARY_NAME_ORG"] = inName
+                add_feature(loc_features, {"NAME_TYPE": "PRIMARY", "NAME_ORG": inName})
                 updateStat(loc_data["DATA_SOURCE"], "NAME_ORG(ORGANIZATION)", inName)
 
         if rsltRecord["ADDR1"]:
+            # ADDR_TYPE BUSINESS is load-bearing here, not decoration: these records carry no name
+            # at all, so the address IS their identity, and BUSINESS is what marks it as a distinct
+            # physical location so two practice locations do not collapse into one entity.
             updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE1", rsltRecord["ADDR1"])
-            loc_data["BUSINESS_ADDR_LINE1"] = rsltRecord["ADDR1"]
+            address = {"ADDR_TYPE": "BUSINESS", "ADDR_LINE1": rsltRecord["ADDR1"]}
             if rsltRecord["ADDR2"] and rsltRecord["ADDR2"] != "NONE":
                 updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"])
-                loc_data["BUSINESS_ADDR_LINE2"] = rsltRecord["ADDR2"]
-            loc_data["BUSINESS_ADDR_CITY"] = rsltRecord["CITY"]
-            loc_data["BUSINESS_ADDR_STATE"] = rsltRecord["STATE"]
-            loc_data["BUSINESS_ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
-            loc_data["BUSINESS_ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
+                address["ADDR_LINE2"] = rsltRecord["ADDR2"]
+            address["ADDR_CITY"] = rsltRecord["CITY"]
+            address["ADDR_STATE"] = rsltRecord["STATE"]
+            address["ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
+            address["ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
+            add_feature(loc_features, address)
 
         if rsltRecord["PH1"]:
             updateStat(loc_data["DATA_SOURCE"], "PHONE", rsltRecord["PH1"])
-            loc_data["PHONE_NUMBER"] = rsltRecord["PH1"]
+            add_phone(loc_features, rsltRecord["PH1"])
         if rsltRecord["PH2"]:
             updateStat(loc_data["DATA_SOURCE"], "FAX", rsltRecord["PH2"])
-            loc_data["FAX_PHONE_NUMBER"] = rsltRecord["PH2"]
+            add_phone(loc_features, rsltRecord["PH2"], "FAX")
 
         # Disclose rel to NPI
-        loc_data["REL_POINTER_DOMAIN"] = "NPI"
-        loc_data["REL_POINTER_KEY"] = inNPI
-        loc_data["REL_POINTER_ROLE"] = "Secondary Location"
+        add_feature(
+            loc_features,
+            {
+                "REL_POINTER_DOMAIN": "NPI",
+                "REL_POINTER_KEY": inNPI,
+                "REL_POINTER_ROLE": "Secondary Location",
+            },
+        )
 
         Locations_outFile.write(json.dumps(drop_empty_attributes(loc_data)) + "\n")
         JSON_row_count += 1
@@ -266,38 +341,51 @@ def map_endpoints(inNPI):
     while resultRow:
         rsltRecord = dict(zip(hdr1, resultRow))
         ep_data = {}
+        ep_features = []
 
         if rsltRecord["IS_AFFILIATE"] == "Y":
             ep_data["DATA_SOURCE"] = "NPI-AFFILIATIONS"
             ep_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
-            ep_data["RECORD_TYPE"] = "ORGANIZATION"
+            ep_data["FEATURES"] = ep_features
+            add_feature(ep_features, {"RECORD_TYPE": "ORGANIZATION"})
             updateStat("DATA_SOURCES", ep_data["DATA_SOURCE"])
-            updateStat(ep_data["DATA_SOURCE"], ep_data["RECORD_TYPE"])
+            updateStat(ep_data["DATA_SOURCE"], "ORGANIZATION")
 
             # --jb: added name org
             if rsltRecord["NAME_ORG"]:
                 updateStat(ep_data["DATA_SOURCE"], "NAME", rsltRecord["NAME_ORG"])
-                ep_data["PRIMARY_NAME_ORG"] = rsltRecord["NAME_ORG"]
+                add_feature(
+                    ep_features,
+                    {"NAME_TYPE": "PRIMARY", "NAME_ORG": rsltRecord["NAME_ORG"]},
+                )
             else:
                 updateStat(ep_data["DATA_SOURCE"], "MISSING_NAME", ep_data["RECORD_ID"])
 
             if rsltRecord["ADDR1"]:
+                # BUSINESS marks a distinct physical location, which is what keeps two affiliations
+                # at different addresses from being treated as the same place.
                 updateStat(ep_data["DATA_SOURCE"], "ADDR_LINE1", rsltRecord["ADDR1"])
-                ep_data["BUSINESS_ADDR_LINE1"] = rsltRecord["ADDR1"]
+                address = {"ADDR_TYPE": "BUSINESS", "ADDR_LINE1": rsltRecord["ADDR1"]}
                 if rsltRecord["ADDR2"] and rsltRecord["ADDR2"] != "NONE":
                     updateStat(
                         ep_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"]
                     )
-                    ep_data["BUSINESS_ADDR_LINE2"] = rsltRecord["ADDR2"]
-                ep_data["BUSINESS_ADDR_CITY"] = rsltRecord["CITY"]
-                ep_data["BUSINESS_ADDR_STATE"] = rsltRecord["STATE"]
-                ep_data["BUSINESS_ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
-                ep_data["BUSINESS_ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
+                    address["ADDR_LINE2"] = rsltRecord["ADDR2"]
+                address["ADDR_CITY"] = rsltRecord["CITY"]
+                address["ADDR_STATE"] = rsltRecord["STATE"]
+                address["ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
+                address["ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
+                add_feature(ep_features, address)
 
             # Disclose rel to NPI
-            ep_data["REL_POINTER_DOMAIN"] = "NPI"
-            ep_data["REL_POINTER_KEY"] = inNPI
-            ep_data["REL_POINTER_ROLE"] = "Affiliate"
+            add_feature(
+                ep_features,
+                {
+                    "REL_POINTER_DOMAIN": "NPI",
+                    "REL_POINTER_KEY": inNPI,
+                    "REL_POINTER_ROLE": "Affiliate",
+                },
+            )
 
         # --jb: these could be for the affiliate or for the NPI
         if rsltRecord["ENDPOINT"]:
@@ -308,7 +396,7 @@ def map_endpoints(inNPI):
 
             if rsltRecord["ENDPOINT"].find("@") > 0:
                 if rsltRecord["IS_AFFILIATE"] == "Y":
-                    ep_data["EMAIL_ADDRESS"] = rsltRecord["ENDPOINT"]
+                    add_feature(ep_features, {"EMAIL_ADDRESS": rsltRecord["ENDPOINT"]})
                 else:
                     endpointList.append({"EMAIL_ADDRESS": rsltRecord["ENDPOINT"]})
                 updateStat(logDataSource, "EMAIL_ADDRESS", rsltRecord["ENDPOINT"])
@@ -317,7 +405,9 @@ def map_endpoints(inNPI):
             else:
                 updateStat(logDataSource, "WEBSITE_ADDRESS", rsltRecord["ENDPOINT"])
                 if rsltRecord["IS_AFFILIATE"] == "Y":
-                    ep_data["WEBSITE_ADDRESS"] = rsltRecord["ENDPOINT"]
+                    add_feature(
+                        ep_features, {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]}
+                    )
                 else:
                     endpointList.append({"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]})
 
@@ -362,13 +452,13 @@ def map_othernames(inNPI):
             oNames_Mapped[rsltRecord["name1"]] = True
             if typCd == "3":  # DBA
                 updateStat("NPI-PROVIDERS", "NAME-DBA", rsltRecord["name1"])
-                oNames.append({"DBA_NAME_ORG": rsltRecord["name1"]})
+                oNames.append({"NAME_TYPE": "DBA", "NAME_ORG": rsltRecord["name1"]})
             elif typCd == "4":  # Former Bus name
                 updateStat("NPI-PROVIDERS", "NAME-FORMER", rsltRecord["name1"])
-                oNames.append({"FORMER_NAME_ORG": rsltRecord["name1"]})
+                oNames.append({"NAME_TYPE": "FORMER", "NAME_ORG": rsltRecord["name1"]})
             elif typCd == "5":  # Other
                 updateStat("NPI-PROVIDERS", "NAME-OTHER", rsltRecord["name1"])
-                oNames.append({"OTHER_NAME_ORG": rsltRecord["name1"]})
+                oNames.append({"NAME_TYPE": "OTHER", "NAME_ORG": rsltRecord["name1"]})
             else:
                 updateStat("NPI-PROVIDERS", "NAME-OTHERNAME-UNKNOWN-TYPE-" + typCd, rsltRecord["name1"])
 
@@ -383,13 +473,15 @@ def map_othernames(inNPI):
 # -------------------------------------------------------------
 def map_auth(input_row, npi_name):
     auth_data = {}
+    auth_features = []
 
     # --required attributes
     auth_data["DATA_SOURCE"] = "NPI-OFFICIALS"
     auth_data["RECORD_ID"] = input_row["NPI"] + "-AUTH"
-    auth_data["RECORD_TYPE"] = "PERSON"
+    auth_data["FEATURES"] = auth_features
+    add_feature(auth_features, {"RECORD_TYPE": "PERSON"})
     updateStat("DATA_SOURCES", auth_data["DATA_SOURCE"])
-    updateStat(auth_data["DATA_SOURCE"], auth_data["RECORD_TYPE"])
+    updateStat(auth_data["DATA_SOURCE"], "PERSON")
 
     updateStat(
         auth_data["DATA_SOURCE"],
@@ -400,21 +492,21 @@ def map_auth(input_row, npi_name):
             input_row["Authorized Official Last Name"],
         ),
     )
-    auth_data["PRIMARY_NAME_LAST"] = input_row["Authorized Official Last Name"]
-    auth_data["PRIMARY_NAME_FIRST"] = input_row["Authorized Official First Name"]
+    name = {
+        "NAME_TYPE": "PRIMARY",
+        "NAME_LAST": input_row["Authorized Official Last Name"],
+        "NAME_FIRST": input_row["Authorized Official First Name"],
+    }
     if (
         input_row["Authorized Official Middle Name"]
         and input_row["Authorized Official Middle Name"] != "NONE"
     ):
-        auth_data["PRIMARY_NAME_MIDDLE"] = input_row["Authorized Official Middle Name"]
+        name["NAME_MIDDLE"] = input_row["Authorized Official Middle Name"]
     if input_row["Authorized Official Name Prefix Text"]:
-        auth_data["PRIMARY_NAME_PREFIX"] = input_row[
-            "Authorized Official Name Prefix Text"
-        ]
+        name["NAME_PREFIX"] = input_row["Authorized Official Name Prefix Text"]
     if input_row["Authorized Official Name Suffix Text"]:
-        auth_data["PRIMARY_NAME_SUFFIX"] = input_row[
-            "Authorized Official Name Suffix Text"
-        ]
+        name["NAME_SUFFIX"] = input_row["Authorized Official Name Suffix Text"]
+    add_feature(auth_features, name)
 
     if input_row["Authorized Official Title or Position"]:
         updateStat(
@@ -433,12 +525,17 @@ def map_auth(input_row, npi_name):
             "PHONE",
             input_row["Authorized Official Telephone Number"],
         )
-        auth_data["PHONE_NUMBER"] = input_row["Authorized Official Telephone Number"]
+        add_phone(auth_features, input_row["Authorized Official Telephone Number"])
 
     # make disclosed -MODIFY
-    auth_data["REL_POINTER_KEY"] = input_row["NPI"]
-    auth_data["REL_POINTER_DOMAIN"] = "NPI"
-    auth_data["REL_POINTER_ROLE"] = "Authorized Official"
+    add_feature(
+        auth_features,
+        {
+            "REL_POINTER_KEY": input_row["NPI"],
+            "REL_POINTER_DOMAIN": "NPI",
+            "REL_POINTER_ROLE": "Authorized Official",
+        },
+    )
 
     return json.dumps(drop_empty_attributes(auth_data))
 
@@ -453,37 +550,61 @@ def map_npi(input_row):
     global NPIOfficials_row_count
 
     json_data = {}
+    features = []
 
     currNPI = input_row["NPI"]
 
     # --required attributes
-    json_data["DATA_SOURCE"] = "NPI-PROVIDERS"
+    #
+    # A CURRENTLY-DEACTIVATED NPI IS ITS OWN DATA SOURCE. Definition is exact, not a
+    # looks-empty heuristic: a deactivation date present AND no reactivation date. Measured over
+    # the Sept-2026 file (9,798,758 rows):
+    #     deactivated, not reactivated   355,329   -> NPI_DEACTIVE
+    #     deactivated AND reactivated     19,114   -> active again, stay in NPI-PROVIDERS
+    #     never deactivated            9,424,312
+    # The 355,329 are EXACTLY the rows with a blank Entity Type Code, 1:1 -- CMS withdraws every
+    # demographic field precisely because the NPI is deactivated, leaving 2 populated columns of
+    # 330 (NPI and the deactivation date).
+    #
+    # Why a separate source rather than dropping them or folding them in (Master, 2026-09-19):
+    # Senzing can find entities that CONTAIN a record from a given source, so a distinct
+    # DATA_SOURCE makes "this entity touches a retired NPI" directly queryable -- e.g. a claim
+    # landing on a deactivated NPI is a finding, and it would be invisible if these rows were
+    # dropped or buried among 9.4M active providers. The record stays deliberately lean: it keeps
+    # NPI_NUMBER, REF_NPI_ID and REL_ANCHOR so it can still be matched and pointed at, and it gets
+    # NO RECORD_TYPE (the type is genuinely unknowable -- see below) and no address usage type.
+    json_data["DATA_SOURCE"] = (
+        "NPI_DEACTIVE" if is_deactivated(input_row) else "NPI-PROVIDERS"
+    )
     json_data["RECORD_ID"] = input_row["NPI"]
+    json_data["FEATURES"] = features
     # Entity Type Code 1 = individual, 2 = organization. Deactivated NPIs are disseminated with the
     # code and every name/address field blank: leave RECORD_TYPE unset for them (Entity Spec: include
     # when known, leave blank if unknown) instead of defaulting them to ORGANIZATION.
+    # ⛔ Do NOT infer the type. There is nothing to infer it from: no gender, no DOB, no SSN (NPPES
+    # publishes none of the latter two at all), no name and no address on these rows.
     entity_type = input_row["Entity Type Code"]
+    record_type = ""
     if entity_type == "1":
-        json_data["RECORD_TYPE"] = "PERSON"
+        record_type = "PERSON"
     elif entity_type == "2":
-        json_data["RECORD_TYPE"] = "ORGANIZATION"
+        record_type = "ORGANIZATION"
+    add_feature(features, {"RECORD_TYPE": record_type})
     updateStat("DATA_SOURCES", json_data["DATA_SOURCE"])
-    updateStat(json_data["DATA_SOURCE"], json_data.get("RECORD_TYPE", "RECORD_TYPE-UNKNOWN (Entity Type Code blank)"))
+    updateStat(json_data["DATA_SOURCE"], record_type or "RECORD_TYPE-UNKNOWN (Entity Type Code blank)")
 
     # --attributes used for resolution
     # NPI (s): the record's own NPI and, when a deactivated NPI was replaced, the replacement NPI.
     # Both are the same registered Senzing feature, NPI_NUMBER (Entity Spec "Identifiers > Feature:
     # NPI_NUMBER"); the former REPL_NPI_NUMBER attribute is not registered and was silently treated
-    # as payload. In this mapper's flat record shape a feature with several values is carried in a
-    # per-feature sub-list (Entity Spec "Recommended JSON Schema", flat structure still supported).
-    npi_numbers = [{"NPI_NUMBER": input_row["NPI"]}]
+    # as payload. A feature with several values is several objects in FEATURES, one per value
+    # (Entity Spec "Recommended JSON Schema").
+    npi_values = [input_row["NPI"]]
     if input_row["Replacement NPI"] and input_row["Replacement NPI"] != input_row["NPI"]:
         updateStat(json_data["DATA_SOURCE"], "REPL-NPI", input_row["Replacement NPI"])
-        npi_numbers.append({"NPI_NUMBER": input_row["Replacement NPI"]})
-    if len(npi_numbers) == 1:
-        json_data["NPI_NUMBER"] = input_row["NPI"]
-    else:
-        json_data["NPI_NUMBERS"] = npi_numbers
+        npi_values.append(input_row["Replacement NPI"])
+    for npi_value in npi_values:
+        add_feature(features, {"NPI_NUMBER": npi_value})
 
     # REF_NPI_ID: the SAME value(s), asserted a second time as an A1ES exclusive feature.
     #
@@ -504,45 +625,51 @@ def map_npi(input_row):
     # deactivated NPI and its replacement are the SAME provider and must still resolve; if this
     # record asserted only its own NPI, the A1ES deny would block exactly that legitimate merge.
     # Distinct providers still have disjoint value sets, so the guard is unaffected.
-    if len(npi_numbers) == 1:
-        json_data["REF_NPI_ID"] = input_row["NPI"]
-    else:
-        json_data["REF_NPI_IDS"] = [
-            {"REF_NPI_ID": n["NPI_NUMBER"]} for n in npi_numbers
-        ]
+    for npi_value in npi_values:
+        add_feature(features, {"REF_NPI_ID": npi_value})
 
     #  define anchor point for disclosed relationships back to this NPI from NPI-LOCATIONS, NPI-AFFILIATES, and NPI-OFFICIALS
-    json_data["REL_ANCHOR_KEY"] = input_row["NPI"]
-    json_data["REL_ANCHOR_DOMAIN"] = "NPI"
+    add_feature(
+        features,
+        {"REL_ANCHOR_KEY": input_row["NPI"], "REL_ANCHOR_DOMAIN": "NPI"},
+    )
 
     # Names
     npi_name = ""
     if entity_type == "1":
-        json_data["PRIMARY_NAME_LAST"] = input_row["Provider Last Name (Legal Name)"]
+        name = {
+            "NAME_TYPE": "PRIMARY",
+            "NAME_LAST": input_row["Provider Last Name (Legal Name)"],
+            "NAME_FIRST": input_row["Provider First Name"],
+        }
         npi_name = input_row["Provider Last Name (Legal Name)"]
-        json_data["PRIMARY_NAME_FIRST"] = input_row["Provider First Name"]
         npi_name = npi_name + ", " + input_row["Provider First Name"]
         updateStat(json_data["DATA_SOURCE"], "NAME_LAST/FIRST-PRIMARY", npi_name)
         if (
             input_row["Provider Middle Name"]
             and input_row["Provider Middle Name"] != "NONE"
         ):
-            json_data["PRIMARY_NAME_MIDDLE"] = input_row["Provider Middle Name"]
+            name["NAME_MIDDLE"] = input_row["Provider Middle Name"]
             npi_name = npi_name + " " + input_row["Provider Middle Name"]
         if input_row["Provider Name Prefix Text"]:
-            json_data["PRIMARY_NAME_PREFIX"] = input_row["Provider Name Prefix Text"]
+            name["NAME_PREFIX"] = input_row["Provider Name Prefix Text"]
         if input_row["Provider Name Suffix Text"]:
-            json_data["PRIMARY_NAME_SUFFIX"] = input_row["Provider Name Suffix Text"]
+            name["NAME_SUFFIX"] = input_row["Provider Name Suffix Text"]
+        add_feature(features, name)
     elif entity_type == "2":
-        json_data["PRIMARY_NAME_ORG"] = input_row[
-            "Provider Organization Name (Legal Business Name)"
-        ]
         npi_name = input_row["Provider Organization Name (Legal Business Name)"]
+        add_feature(features, {"NAME_TYPE": "PRIMARY", "NAME_ORG": npi_name})
         updateStat(json_data["DATA_SOURCE"], "NAME_ORG-PRIMARY", npi_name)
 
     if not is_placeholder_name(input_row["Provider Other Organization Name"]):
         if input_row["Provider Other Organization Name Type Code"] == "3":  # DBA
-            json_data["DBA_NAME_ORG"] = input_row["Provider Other Organization Name"]
+            add_feature(
+                features,
+                {
+                    "NAME_TYPE": "DBA",
+                    "NAME_ORG": input_row["Provider Other Organization Name"],
+                },
+            )
             updateStat(
                 json_data["DATA_SOURCE"],
                 "NAME_ORG-DBA",
@@ -551,14 +678,26 @@ def map_npi(input_row):
         elif (
             input_row["Provider Other Organization Name Type Code"] == "4"
         ):  # Former Bus name
-            json_data["FORMER_NAME_ORG"] = input_row["Provider Other Organization Name"]
+            add_feature(
+                features,
+                {
+                    "NAME_TYPE": "FORMER",
+                    "NAME_ORG": input_row["Provider Other Organization Name"],
+                },
+            )
             updateStat(
                 json_data["DATA_SOURCE"],
                 "NAME_ORG-FORMER",
                 input_row["Provider Other Organization Name"],
             )
         elif input_row["Provider Other Organization Name Type Code"] == "5":  # Other
-            json_data["OTHER_NAME_ORG"] = input_row["Provider Other Organization Name"]
+            add_feature(
+                features,
+                {
+                    "NAME_TYPE": "OTHER",
+                    "NAME_ORG": input_row["Provider Other Organization Name"],
+                },
+            )
             updateStat(
                 json_data["DATA_SOURCE"],
                 "NAME_ORG-OTHER",
@@ -578,104 +717,31 @@ def map_npi(input_row):
     if is_placeholder_name(input_row["Provider Other Middle Name"]):
         input_row["Provider Other Middle Name"] = ""
 
-    if (
-        input_row["Provider Other Last Name Type Code"] == "1"
-        and input_row["Provider Other Last Name"]
-    ):  # Former Name
-        json_data["FORMER_NAME_LAST"] = input_row["Provider Other Last Name"]
-        json_data["FORMER_NAME_FIRST"] = input_row["Provider Other First Name"]
+    other_name_type = OTHER_LAST_NAME_TYPE_CODES.get(
+        input_row["Provider Other Last Name Type Code"]
+    )
+    if other_name_type and input_row["Provider Other Last Name"]:
         updateStat(
             json_data["DATA_SOURCE"],
-            "NAME_LAST/FIRST-FORMER",
+            "NAME_LAST/FIRST-" + other_name_type,
             "%s, %s"
             % (
                 input_row["Provider Other Last Name"],
                 input_row["Provider Other First Name"],
             ),
         )
+        other_name = {
+            "NAME_TYPE": other_name_type,
+            "NAME_LAST": input_row["Provider Other Last Name"],
+            "NAME_FIRST": input_row["Provider Other First Name"],
+        }
         if input_row["Provider Other Middle Name"]:
-            json_data["FORMER_NAME_MIDDLE"] = input_row["Provider Other Middle Name"]
+            other_name["NAME_MIDDLE"] = input_row["Provider Other Middle Name"]
         if input_row["Provider Other Name Prefix Text"]:
-            json_data["FORMER_NAME_PREFIX"] = input_row[
-                "Provider Other Name Prefix Text"
-            ]
+            other_name["NAME_PREFIX"] = input_row["Provider Other Name Prefix Text"]
         if input_row["Provider Other Name Suffix Text"]:
-            json_data["FORMER_NAME_SUFFIX"] = input_row[
-                "Provider Other Name Suffix Text"
-            ]
-    elif (
-        input_row["Provider Other Last Name Type Code"] == "2"
-        and input_row["Provider Other Last Name"]
-    ):  # Professional Name
-        json_data["PROFESSIONAL_NAME_LAST"] = input_row["Provider Other Last Name"]
-        json_data["PROFESSIONAL_NAME_FIRST"] = input_row["Provider Other First Name"]
-        updateStat(
-            json_data["DATA_SOURCE"],
-            "NAME_LAST/FIRST-PROFESSIONAL",
-            "%s, %s"
-            % (
-                input_row["Provider Other Last Name"],
-                input_row["Provider Other First Name"],
-            ),
-        )
-        if input_row["Provider Other Middle Name"]:
-            json_data["PROFESSIONAL_NAME_MIDDLE"] = input_row[
-                "Provider Other Middle Name"
-            ]
-        if input_row["Provider Other Name Prefix Text"]:
-            json_data["PROFESSIONAL_NAME_PREFIX"] = input_row[
-                "Provider Other Name Prefix Text"
-            ]
-        if input_row["Provider Other Name Suffix Text"]:
-            json_data["PROFESSIONAL_NAME_SUFFIX"] = input_row[
-                "Provider Other Name Suffix Text"
-            ]
-    elif (
-        input_row["Provider Other Last Name Type Code"] == "3"
-        and input_row["Provider Other Last Name"]
-    ):  # DBA
-        json_data["DBA_NAME_LAST"] = input_row["Provider Other Last Name"]
-        json_data["DBA_NAME_FIRST"] = input_row["Provider Other First Name"]
-        updateStat(
-            json_data["DATA_SOURCE"],
-            "NAME_LAST/FIRST-DBA",
-            "%s, %s"
-            % (
-                input_row["Provider Other Last Name"],
-                input_row["Provider Other First Name"],
-            ),
-        )
-        if input_row["Provider Other Middle Name"]:
-            json_data["DBA_NAME_MIDDLE"] = input_row["Provider Other Middle Name"]
-        if input_row["Provider Other Name Prefix Text"]:
-            json_data["DBA_NAME_PREFIX"] = input_row["Provider Other Name Prefix Text"]
-        if input_row["Provider Other Name Suffix Text"]:
-            json_data["DBA_NAME_SUFFIX"] = input_row["Provider Other Name Suffix Text"]
-    elif (
-        input_row["Provider Other Last Name Type Code"] == "5"
-        and input_row["Provider Other Last Name"]
-    ):  # Other
-        json_data["OTHER_NAME_LAST"] = input_row["Provider Other Last Name"]
-        json_data["OTHER_NAME_FIRST"] = input_row["Provider Other First Name"]
-        updateStat(
-            json_data["DATA_SOURCE"],
-            "NAME_LAST/FIRST-OTHER",
-            "%s, %s"
-            % (
-                input_row["Provider Other Last Name"],
-                input_row["Provider Other First Name"],
-            ),
-        )
-        if input_row["Provider Other Middle Name"]:
-            json_data["OTHER_NAME_MIDDLE"] = input_row["Provider Other Middle Name"]
-        if input_row["Provider Other Name Prefix Text"]:
-            json_data["OTHER_NAME_PREFIX"] = input_row[
-                "Provider Other Name Prefix Text"
-            ]
-        if input_row["Provider Other Name Suffix Text"]:
-            json_data["OTHER_NAME_SUFFIX"] = input_row[
-                "Provider Other Name Suffix Text"
-            ]
+            other_name["NAME_SUFFIX"] = input_row["Provider Other Name Suffix Text"]
+        add_feature(features, other_name)
     else:
         updateStat(
             json_data["DATA_SOURCE"],
@@ -694,9 +760,10 @@ def map_npi(input_row):
             "ADDR_LINE1-MAILING",
             input_row["Provider First Line Business Mailing Address"],
         )
-        json_data["MAILING_ADDR_LINE1"] = input_row[
-            "Provider First Line Business Mailing Address"
-        ]
+        mailing = {
+            "ADDR_TYPE": "MAILING",
+            "ADDR_LINE1": input_row["Provider First Line Business Mailing Address"],
+        }
         if (
             input_row["Provider Second Line Business Mailing Address"]
             and input_row["Provider Second Line Business Mailing Address"] != "NONE"
@@ -706,21 +773,20 @@ def map_npi(input_row):
                 "ADDR_LINE2-MAILING",
                 input_row["Provider Second Line Business Mailing Address"],
             )
-            json_data["MAILING_ADDR_LINE2"] = input_row[
+            mailing["ADDR_LINE2"] = input_row[
                 "Provider Second Line Business Mailing Address"
             ]
-        json_data["MAILING_ADDR_CITY"] = input_row[
-            "Provider Business Mailing Address City Name"
-        ]
-        json_data["MAILING_ADDR_STATE"] = input_row[
+        mailing["ADDR_CITY"] = input_row["Provider Business Mailing Address City Name"]
+        mailing["ADDR_STATE"] = input_row[
             "Provider Business Mailing Address State Name"
         ]
-        json_data["MAILING_ADDR_POSTAL_CODE"] = input_row[
+        mailing["ADDR_POSTAL_CODE"] = input_row[
             "Provider Business Mailing Address Postal Code"
         ]
-        json_data["MAILING_ADDR_COUNTRY"] = input_row[
+        mailing["ADDR_COUNTRY"] = input_row[
             "Provider Business Mailing Address Country Code (If outside U.S.)"
         ]
+        add_feature(features, mailing)
 
     if input_row["Provider First Line Business Practice Location Address"]:
 
@@ -736,9 +802,10 @@ def map_npi(input_row):
         #
         # This IS an ER change, not a cosmetic one. Usage types are free-form, but only BUSINESS
         # on ADDRESS/GEO_LOC and MOBILE on PHONE carry any meaning to the engine (Master,
-        # 2026-09-19); every other label is inert. Labelling 7,471,371 individual providers'
-        # practice addresses PRIMARY therefore withheld the one address usage type that means
-        # something, on 76% of the corpus.
+        # 2026-09-19); every other label is inert. BUSINESS denotes a distinct PHYSICAL LOCATION --
+        # it is what keeps different locations from collapsing into one entity. Labelling
+        # 7,471,371 individual providers' practice addresses PRIMARY therefore withheld the one
+        # address usage type that means something, on 76% of the corpus.
         #
         # ⚠ Do not be misled by get_record_preview: the same address under PRIMARY_ and BUSINESS_
         # returns the byte-identical ADDRESS FEAT_DESC '3500 CENTRAL AVE KEARNEY NE 688472944',
@@ -752,9 +819,12 @@ def map_npi(input_row):
             "ADDR_LINE1-" + address_label,
             input_row["Provider First Line Business Practice Location Address"],
         )
-        json_data[address_label + "_ADDR_LINE1"] = input_row[
-            "Provider First Line Business Practice Location Address"
-        ]
+        practice = {
+            "ADDR_TYPE": address_label,
+            "ADDR_LINE1": input_row[
+                "Provider First Line Business Practice Location Address"
+            ],
+        }
         if (
             input_row["Provider Second Line Business Practice Location Address"]
             and input_row["Provider Second Line Business Practice Location Address"]
@@ -765,59 +835,68 @@ def map_npi(input_row):
                 "ADDR_LINE2-" + address_label,
                 input_row["Provider Second Line Business Practice Location Address"],
             )
-            json_data[address_label + "_ADDR_LINE2"] = input_row[
+            practice["ADDR_LINE2"] = input_row[
                 "Provider Second Line Business Practice Location Address"
             ]
-        json_data[address_label + "_ADDR_CITY"] = input_row[
+        practice["ADDR_CITY"] = input_row[
             "Provider Business Practice Location Address City Name"
         ]
-        json_data[address_label + "_ADDR_STATE"] = input_row[
+        practice["ADDR_STATE"] = input_row[
             "Provider Business Practice Location Address State Name"
         ]
-        json_data[address_label + "_ADDR_POSTAL_CODE"] = input_row[
+        practice["ADDR_POSTAL_CODE"] = input_row[
             "Provider Business Practice Location Address Postal Code"
         ]
-        json_data[address_label + "_ADDR_COUNTRY"] = input_row[
+        practice["ADDR_COUNTRY"] = input_row[
             "Provider Business Practice Location Address Country Code (If outside U.S.)"
         ]
+        add_feature(features, practice)
 
     #  Phone Numbers
+    #  The telephone numbers carry no PHONE_TYPE and the fax numbers carry PHONE_TYPE FAX; which
+    #  address a number was reported against is not a phone usage type, and the compound
+    #  MAILING-LOCATION / BUSINESS-LOCATION / *-FAX labels this mapper used to emit were invented
+    #  ones. add_phone() drops a repeat, because the mailing and practice numbers are frequently
+    #  the same number. The stat labels below still name the SOURCE column, which is unchanged.
     if input_row["Provider Business Mailing Address Telephone Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
             "PHONE-MAILING-LOCATION",
             input_row["Provider Business Mailing Address Telephone Number"],
         )
-        json_data["MAILING-LOCATION_PHONE_NUMBER"] = input_row[
-            "Provider Business Mailing Address Telephone Number"
-        ]
+        add_phone(
+            features, input_row["Provider Business Mailing Address Telephone Number"]
+        )
     if input_row["Provider Business Mailing Address Fax Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
             "PHONE-MAILING-FAX",
             input_row["Provider Business Mailing Address Fax Number"],
         )
-        json_data["MAILING-FAX_PHONE_NUMBER"] = input_row[
-            "Provider Business Mailing Address Fax Number"
-        ]
+        add_phone(
+            features, input_row["Provider Business Mailing Address Fax Number"], "FAX"
+        )
     if input_row["Provider Business Practice Location Address Telephone Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
             "PHONE-BUSINESS-LOCATION",
             input_row["Provider Business Practice Location Address Telephone Number"],
         )
-        json_data["BUSINESS-LOCATION_PHONE_NUMBER"] = input_row[
-            "Provider Business Practice Location Address Telephone Number"
-        ]
+        add_phone(
+            features,
+            input_row["Provider Business Practice Location Address Telephone Number"],
+        )
     if input_row["Provider Business Practice Location Address Fax Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
             "PHONE-BUSINESS-FAX",
             input_row["Provider Business Practice Location Address Fax Number"],
         )
-        json_data["BUSINESS-FAX_PHONE_NUMBER"] = input_row[
-            "Provider Business Practice Location Address Fax Number"
-        ]
+        add_phone(
+            features,
+            input_row["Provider Business Practice Location Address Fax Number"],
+            "FAX",
+        )
 
     #  GENDER
     #  NPPES renamed "Provider Gender Code" to "Provider Sex Code" (2025+ dissemination files);
@@ -827,13 +906,12 @@ def map_npi(input_row):
         sex_code = input_row.get("Provider Gender Code", "")
     if sex_code:
         updateStat(json_data["DATA_SOURCE"], "GENDER", sex_code)
-        json_data["GENDER"] = sex_code
+        add_feature(features, {"GENDER": sex_code})
 
     #  Provider License Numbers, Taxonomy Codes, and Taxonomy Groups (1-15) are mapped if available
     #  Provider License Numbers are NOT mapped as payload, the rest are
     looper = 1
     pLicNums_Mapped = {}  # Avoid duplicate License Numbers
-    pLicNums = []
     pTaxyCds_Mapped = {}  # Avoid Duplicate Taxonomy Codes
     pTaxyCds = []
     txnmyGrp_Mapped = {}  # avoid Duplicate Taxonomy Group Codes
@@ -858,7 +936,8 @@ def map_npi(input_row):
                     input_row["Provider License Number State Code_" + str(looper)],
                     input_row["Provider License Number_" + str(looper)],
                 )
-                pLicNums.append(
+                add_feature(
+                    features,
                     {
                         "PROVIDER_LICENSE_NUMBER": input_row[
                             "Provider License Number_" + str(looper)
@@ -866,7 +945,7 @@ def map_npi(input_row):
                         "PROVIDER_LICENSE_STATE": input_row[
                             "Provider License Number State Code_" + str(looper)
                         ],
-                    }
+                    },
                 )
 
         # --payload-- attributes (Taxonomy Codes & Groups)
@@ -919,8 +998,6 @@ def map_npi(input_row):
 
         looper += 1
 
-    if pLicNums:
-        json_data["PROVIDER_LICENSE_NUMS"] = pLicNums
     # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
     # if pTaxyCds:
     #    json_data['PROVIDER_TAXONOMY_CDS'] = pTaxyCds
@@ -930,7 +1007,6 @@ def map_npi(input_row):
     #  Other Provider IDs - 1-51 are checked and mapped if available
     looper = 1
     opIDs_Mapped = {}
-    opIDs = []
     while looper < 51:
         if input_row["Other Provider Identifier_" + str(looper)]:
             key1 = (
@@ -958,7 +1034,8 @@ def map_npi(input_row):
                     input_row["Other Provider Identifier State_" + str(looper)],
                     input_row["Other Provider Identifier_" + str(looper)],
                 )
-                opIDs.append(
+                add_feature(
+                    features,
                     {
                         "PROVIDER_ID_NUMBER": input_row[
                             "Other Provider Identifier_" + str(looper)
@@ -972,13 +1049,10 @@ def map_npi(input_row):
                                 "Other Provider Identifier Issuer_" + str(looper)
                             ],
                         ),
-                    }
+                    },
                 )
 
         looper += 1
-
-    if opIDs:
-        json_data["PROVIDER_IDS"] = opIDs
 
     # --payload attributes
     if input_row["Provider Enumeration Date"]:
@@ -1030,9 +1104,8 @@ def map_npi(input_row):
         json_data["Parent Organization LBN"] = input_row["Parent Organization LBN"]
 
     #   Map the Othername reference data if there is any for this NPI
-    onNames = map_othernames(input_row["NPI"])
-    if onNames:
-        json_data["OTHER_NAMES"] = onNames
+    for other_org_name in map_othernames(input_row["NPI"]):
+        add_feature(features, other_org_name)
 
     #  Map the authorized official if there is one
     if input_row["Authorized Official Last Name"]:
@@ -1044,10 +1117,9 @@ def map_npi(input_row):
     map_locations(input_row["NPI"], npi_name, input_row["Entity Type Code"])
 
     #   Map the Endpoint reference data if there are any for this NPI
-    endpointList = map_endpoints(input_row["NPI"])
     # --jb: some endpoints like email and website belong to the npi, others are affiliates
-    if endpointList:
-        json_data["ENDPOINT_LIST"] = endpointList
+    for endpoint in map_endpoints(input_row["NPI"]):
+        add_feature(features, endpoint)
 
     return json.dumps(drop_empty_attributes(json_data))
 
@@ -1350,6 +1422,9 @@ if __name__ == "__main__":
             Locations_outputFileSpec = (
                 outputFilePath + "NPI_LOCATIONS_" + parms.filePeriod + ".json"
             )
+            Deactivated_outputFileSpec = (
+                outputFilePath + "NPI_DEACTIVE_" + parms.filePeriod + ".json"
+            )
 
             #    Checking for existence of output files.  Delete if they exist.
 
@@ -1441,6 +1516,28 @@ if __name__ == "__main__":
                 )
                 os.remove(Locations_outputFileSpec)
 
+            if not os.path.isfile(Deactivated_outputFileSpec):
+                msgOut(
+                    0,
+                    "        NPI_DEACTIVE will be written to  : "
+                    + Deactivated_outputFileSpec,
+                    "I",
+                    "",
+                    0,
+                    0,
+                )
+            else:
+                msgOut(
+                    0,
+                    "        NPI_DEACTIVE output file exists and will be replaced  : "
+                    + Deactivated_outputFileSpec,
+                    "I",
+                    "",
+                    0,
+                    0,
+                )
+                os.remove(Deactivated_outputFileSpec)
+
     npiInputFile = open(npiDataFileSpec, "r", encoding="utf-8")
 
     if outputOneFile:
@@ -1449,17 +1546,20 @@ if __name__ == "__main__":
         Officials_outFile = one_outFile
         Affiliations_outFile = one_outFile
         Locations_outFile = one_outFile
+        Deactivated_outFile = one_outFile
     else:
         Providers_outFile = open(Providers_outputFileSpec, "w", encoding="utf-8")
         Officials_outFile = open(Officials_outputFileSpec, "w", encoding="utf-8")
         Affiliations_outFile = open(Affiliations_outputFileSpec, "w", encoding="utf-8")
         Locations_outFile = open(Locations_outputFileSpec, "w", encoding="utf-8")
+        Deactivated_outFile = open(Deactivated_outputFileSpec, "w", encoding="utf-8")
 
     NPIinput_row_count = 0
     NPIProvider_row_count = 0
     NPIOfficials_row_count = 0
     NPILocations_row_count = 0
     NPIAffiliations_row_count = 0
+    NPIDeactivated_row_count = 0
     JSON_row_count = 1
     progressInterval = 10000  # Report every 'this-many' records processed.
 
@@ -1523,9 +1623,20 @@ if __name__ == "__main__":
         #  file, and this mapper adds no field the download does not already carry. Encrypting the
         #  output would make it unloadable. CodeQL began flagging this write once PROVIDER_ID routed
         #  issuer-qualified identifiers through map_npi(); the sink and its data are unchanged.
-        Providers_outFile.write(map_npi(NPIinput_row) + "\n")
+        #
+        #  A currently-deactivated NPI goes to its own file, because map_npi() stamped it with its
+        #  own DATA_SOURCE. Both decisions read is_deactivated(), so the source a record claims and
+        #  the file it lands in cannot disagree.
+        npi_json = map_npi(NPIinput_row)
+        if is_deactivated(NPIinput_row):
+            #  codeql[py/clear-text-storage-sensitive-data] - public CMS data, see the note above
+            Deactivated_outFile.write(npi_json + "\n")
+            NPIDeactivated_row_count += 1
+        else:
+            #  codeql[py/clear-text-storage-sensitive-data] - public CMS data, see the note above
+            Providers_outFile.write(npi_json + "\n")
+            NPIProvider_row_count += 1
         JSON_row_count += 1
-        NPIProvider_row_count += 1
 
         #  Messages at intervals, or stop processing because of test mode
         if NPIinput_row_count % progressInterval == 0:
@@ -1560,6 +1671,7 @@ if __name__ == "__main__":
         Affiliations_outFile.close()
         Locations_outFile.close()
         Officials_outFile.close()
+        Deactivated_outFile.close()
 
     # --remove the temporary reference DB (and its directory when we created it)
     conn.close()
@@ -1595,6 +1707,15 @@ if __name__ == "__main__":
     msgOut(
         0,
         "     NPI-Locations JSON rows produced      : " + str(NPILocations_row_count),
+        "I",
+        "",
+        0,
+        0,
+    )
+    msgOut(
+        0,
+        "     NPI_DEACTIVE JSON rows produced       : "
+        + str(NPIDeactivated_row_count),
         "I",
         "",
         0,

@@ -2,6 +2,12 @@ addDataSource NPI-PROVIDERS
 addDataSource NPI-OFFICIALS
 addDataSource NPI-LOCATIONS
 addDataSource NPI-AFFILIATIONS
+# Currently-deactivated NPIs are their own source, not a flag on a provider record. Definition:
+# deactivation date present AND no reactivation date -- measured 355,329 of 9,798,758, exactly the
+# rows CMS blanks every demographic field on. As a distinct DATA_SOURCE, "entities containing an
+# NPI_DEACTIVE record" is directly queryable, so e.g. a claim landing on a retired NPI surfaces as
+# a finding instead of being buried among 9.4M active providers.
+addDataSource NPI_DEACTIVE
 
 addFeature {"feature": "PROVIDER_LICENSE", "class": "ISSUED_ID", "behavior": "F1", "anonymize": "No", "candidates": "Yes", "standardize": "PARSE_ID", "expression": "EXPRESS_ID", "comparison": "ID_COMP", "elementList": [{"element": "ID_NUM", "expressed": "No", "compared": "No"}, {"element": "STATE", "expressed": "No", "compared": "Yes"}, {"element": "ID_NUM_STD", "expressed": "Yes", "compared": "Yes"}]}
 addAttribute {"attribute": "PROVIDER_LICENSE_NUMBER", "class": "IDENTIFIER", "feature": "PROVIDER_LICENSE", "element": "ID_NUM", "required": "Yes", "default": "", "advanced": "No", "internal": "No"}
