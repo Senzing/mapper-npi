@@ -128,7 +128,12 @@ def derived_record_id(npi, *parts):
     are exactly the columns of the `select distinct` that produced the row, so distinct rows for one
     NPI always get distinct ids.
     """
-    key = "|".join("" if p is None else str(p) for p in parts)
+    # Serialised with json.dumps, NOT joined on a separator: "|".join is ambiguous, because
+    # ("a|b","c") and ("a","b|c") produce the identical key and therefore the identical
+    # RECORD_ID, so one row would silently replace the other on load -- the exact failure this
+    # function exists to prevent. NPPES carries no "|" today, but the guarantee has to hold for
+    # the data, not for today's sample.
+    key = json.dumps(["" if p is None else str(p) for p in parts], ensure_ascii=False)
     return str(npi) + "-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
