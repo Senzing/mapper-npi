@@ -13,7 +13,7 @@ Usage:
 
 ```console
 python npi_mapper.py --help
-usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME]
+usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME] [-w WORKDIR]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -25,6 +25,9 @@ optional arguments:
                         the file or directory to write the JSON files to
   -l LOGFILENAME, --logFileName LOGFILENAME
                         optional statistics output file name
+  -w WORKDIR, --workDir WORKDIR
+                        optional local directory for the temporary NPPES.db sqlite file (default: a fresh
+                        system temp directory; never the source directory, which may be a shared/read-only mount)
 ```
 
 ## Contents
