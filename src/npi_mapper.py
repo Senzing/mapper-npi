@@ -398,7 +398,9 @@ def map_endpoints(inNPI):
                 if rsltRecord["IS_AFFILIATE"] == "Y":
                     add_feature(ep_features, {"EMAIL_ADDRESS": rsltRecord["ENDPOINT"]})
                 else:
-                    endpointList.append({"EMAIL_ADDRESS": rsltRecord["ENDPOINT"]})
+                    ep_feature = {"EMAIL_ADDRESS": rsltRecord["ENDPOINT"]}
+                    if ep_feature not in endpointList:  # NPPES repeats an endpoint per location
+                        endpointList.append(ep_feature)
                 updateStat(logDataSource, "EMAIL_ADDRESS", rsltRecord["ENDPOINT"])
 
             # --jb: if not email its a website or other url
@@ -409,7 +411,9 @@ def map_endpoints(inNPI):
                         ep_features, {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]}
                     )
                 else:
-                    endpointList.append({"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]})
+                    ep_feature = {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]}
+                    if ep_feature not in endpointList:
+                        endpointList.append(ep_feature)
 
         # --jb: write it out to affiliate file
         if rsltRecord["IS_AFFILIATE"] == "Y":
@@ -426,26 +430,6 @@ def map_endpoints(inNPI):
 # -------------------------------------------------------------
 #  Map Othernames for this specific NPI #
 # -------------------------------------------------------------
-def has_org_othername(inNPI):
-    """True if this NPI has a row in the Provider Other ORGANIZATION Name reference file.
-
-    Used only to recover RECORD_TYPE for a deactivated NPI, whose Entity Type Code CMS
-    blanks along with every other demographic field. Appearing in othername_pfile implies
-    ORGANIZATION: measured over the Sept-2026 file, of the 690,289 NPIs in that file
-    **zero** are Entity Type 1, across all three name-type codes (3 DBA 591,256 /
-    4 Former Legal Business Name 33,684 / 5 Other 75,973); 644,659 are Entity Type 2 and
-    the remaining 45,630 are exactly the deactivated rows we are typing here. Type code 2
-    (Professional Name, the individual-applicable one) never appears.
-
-    Queried only for deactivated records (3.6% of the file), and OTHERNAME is indexed on
-    NPI, so this costs an index probe on ~355k rows rather than 9.8M.
-    """
-    cur = conn.cursor().execute(
-        "select 1 from OTHERNAME where NPI = ? limit 1", (str(inNPI),)
-    )
-    return cur.fetchone() is not None
-
-
 def map_othernames(inNPI):
     oNames_Mapped = {}
     oNames = []
@@ -603,16 +587,29 @@ def map_npi(input_row):
     # when known, leave blank if unknown) instead of defaulting them to ORGANIZATION.
     # ⛔ Do NOT infer the type. There is nothing to infer it from: no gender, no DOB, no SSN (NPPES
     # publishes none of the latter two at all), no name and no address on these rows.
+    # Fetch the Other ORGANIZATION Name rows once, here, because they are needed for TWO
+    # decisions: the RECORD_TYPE derivation immediately below and the NAME features added
+    # further down. Deriving the type from the SAME list that produces the name makes
+    # "typed => named" true by construction. An earlier version used a separate EXISTS probe
+    # on the OTHERNAME table, which disagreed on 2 records in a 12.5k sample: map_othernames
+    # drops placeholder names (is_placeholder_name) while the raw probe still saw the row, so
+    # those records were typed ORGANIZATION on the strength of a name that was then discarded.
+    other_org_names = map_othernames(input_row["NPI"])
+
     entity_type = input_row["Entity Type Code"]
     record_type = ""
     if entity_type == "1":
         record_type = "PERSON"
     elif entity_type == "2":
         record_type = "ORGANIZATION"
-    elif is_deactivated(input_row) and has_org_othername(input_row["NPI"]):
+    elif is_deactivated(input_row) and other_org_names:
         # Map the data we CAN get. Entity Type Code is blank on every deactivated row, but
         # a row in the Provider Other ORGANIZATION Name file is a clean discriminator --
-        # 0 of 690,289 such NPIs are Entity Type 1 (see has_org_othername). These records
+        # of the 690,289 NPIs appearing in othername_pfile, ZERO are Entity Type 1, across
+        # all three name-type codes (3 DBA 591,256 / 4 Former Legal Business Name 33,684 /
+        # 5 Other 75,973); 644,659 are Entity Type 2 and the remaining 45,630 are exactly the
+        # deactivated rows typed here. Code 2, Professional Name -- the individual-applicable
+        # one -- never appears, so the sole-practitioner-with-a-DBA case does not arise. These records
         # also carry that business name, so typing them makes them genuinely resolvable
         # organizations instead of bare anchors. The rest stay untyped: for them nothing
         # exists to infer from -- no gender, no DOB, no SSN, no name, no address.
@@ -1133,7 +1130,7 @@ def map_npi(input_row):
         json_data["Parent Organization LBN"] = input_row["Parent Organization LBN"]
 
     #   Map the Othername reference data if there is any for this NPI
-    for other_org_name in map_othernames(input_row["NPI"]):
+    for other_org_name in other_org_names:
         add_feature(features, other_org_name)
 
     #  Map the authorized official if there is one
