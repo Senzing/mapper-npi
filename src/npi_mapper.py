@@ -771,9 +771,8 @@ def map_npi(input_row):
     txnmyGrp_Mapped = {}  # avoid Duplicate Taxonomy Group Codes
     txnmyGrp = []
     while looper < 16:
-        if (
-            input_row["Provider License Number_" + str(looper)]
-            and input_row["Provider License Number_" + str(looper)] != "========="
+        if input_row["Provider License Number_" + str(looper)] and check_id_value(
+            input_row["Provider License Number_" + str(looper)].split()
         ):
             key1 = (
                 input_row["Provider License Number_" + str(looper)]
@@ -1416,7 +1415,13 @@ if __name__ == "__main__":
 
     # Set up list of ID values to ignore.  To check, split value by space and check first word to cover 'NONE ISSUED', 'NONE REQUIRED'....:
     idValuesToIgnore = {}
+    # CMS masks self-reported SSNs/ITINs/EINs that providers put into FOIA-disclosable fields
+    # (NPPES readme, CMS-6060-N): SSN -> "$$$$$$$$$", ITIN -> "*********", EIN -> "=========".
+    # Only the EIN mask was previously stripped. The engine's genericity detection would stop a
+    # shared mask being used for resolution anyway, so this is data hygiene, not an ER fix.
     idValuesToIgnore["========="] = True
+    idValuesToIgnore["$$$$$$$$$"] = True
+    idValuesToIgnore["*********"] = True
     idValuesToIgnore["PENDING"] = True
     idValuesToIgnore["NA"] = True
     idValuesToIgnore["ENROLLED"] = True
