@@ -426,6 +426,26 @@ def map_endpoints(inNPI):
 # -------------------------------------------------------------
 #  Map Othernames for this specific NPI #
 # -------------------------------------------------------------
+def has_org_othername(inNPI):
+    """True if this NPI has a row in the Provider Other ORGANIZATION Name reference file.
+
+    Used only to recover RECORD_TYPE for a deactivated NPI, whose Entity Type Code CMS
+    blanks along with every other demographic field. Appearing in othername_pfile implies
+    ORGANIZATION: measured over the Sept-2026 file, of the 690,289 NPIs in that file
+    **zero** are Entity Type 1, across all three name-type codes (3 DBA 591,256 /
+    4 Former Legal Business Name 33,684 / 5 Other 75,973); 644,659 are Entity Type 2 and
+    the remaining 45,630 are exactly the deactivated rows we are typing here. Type code 2
+    (Professional Name, the individual-applicable one) never appears.
+
+    Queried only for deactivated records (3.6% of the file), and OTHERNAME is indexed on
+    NPI, so this costs an index probe on ~355k rows rather than 9.8M.
+    """
+    cur = conn.cursor().execute(
+        "select 1 from OTHERNAME where NPI = ? limit 1", (str(inNPI),)
+    )
+    return cur.fetchone() is not None
+
+
 def map_othernames(inNPI):
     oNames_Mapped = {}
     oNames = []
@@ -589,6 +609,15 @@ def map_npi(input_row):
         record_type = "PERSON"
     elif entity_type == "2":
         record_type = "ORGANIZATION"
+    elif is_deactivated(input_row) and has_org_othername(input_row["NPI"]):
+        # Map the data we CAN get. Entity Type Code is blank on every deactivated row, but
+        # a row in the Provider Other ORGANIZATION Name file is a clean discriminator --
+        # 0 of 690,289 such NPIs are Entity Type 1 (see has_org_othername). These records
+        # also carry that business name, so typing them makes them genuinely resolvable
+        # organizations instead of bare anchors. The rest stay untyped: for them nothing
+        # exists to infer from -- no gender, no DOB, no SSN, no name, no address.
+        record_type = "ORGANIZATION"
+        updateStat(json_data["DATA_SOURCE"], "RECORD_TYPE-DERIVED-FROM-OTHERNAME")
     add_feature(features, {"RECORD_TYPE": record_type})
     updateStat("DATA_SOURCES", json_data["DATA_SOURCE"])
     updateStat(json_data["DATA_SOURCE"], record_type or "RECORD_TYPE-UNKNOWN (Entity Type Code blank)")
