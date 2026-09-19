@@ -12,4 +12,17 @@ addAttribute {"attribute": "PROVIDER_ID_NUMBER", "class": "IDENTIFIER", "feature
 addAttribute {"attribute": "PROVIDER_ID_STATE", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "STATE", "required": "Desired", "default": "", "advanced": "No", "internal": "No"}
 addAttribute {"attribute": "PROVIDER_ID_ISSUER", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "ISSUER", "required": "Desired", "default": "", "advanced": "No", "internal": "No"}
 
+# REF_NPI_ID -- the provider's OWN NPI, asserted a second time as an A1ES exclusive feature.
+# NPI_NUMBER is stock F1E, so a matching value RESOLVES. Other sources carry NPI lists that are
+# REFERENCES, not identity: a BrightQuery/ODO organization record was measured carrying 700 NPIs
+# (LINCARE INC. + its affiliated providers). Under F1E alone all 700 distinct providers resolve
+# into that one organization, and hence into each other. A1ES DENIES on a value mismatch, so two
+# distinct providers -- which always hold different REF_NPI_IDs, the set being unique -- can no
+# longer co-resolve however many reference lists point at them.
+# Deliberately identical in shape to BQ_ID. templateAdd/GLOBAL_ID is used rather than a hand-rolled
+# addFeature because it is the recipe that decomposes A1ES correctly into FREQ=A1/EXCL=Yes/STAB=Yes;
+# a hand-rolled definition is the documented way to register an A1ES feature that silently misbehaves.
+templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES"}
+getFeature REF_NPI_ID
+
 save

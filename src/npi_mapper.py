@@ -485,6 +485,32 @@ def map_npi(input_row):
     else:
         json_data["NPI_NUMBERS"] = npi_numbers
 
+    # REF_NPI_ID: the SAME value(s), asserted a second time as an A1ES exclusive feature.
+    #
+    # Why both. NPI_NUMBER is F1E, so a matching value RESOLVES. That is correct between this
+    # file and itself, but other sources carry NPI lists that are REFERENCES rather than identity
+    # -- a BrightQuery/ODO organization record was measured carrying 700 NPIs (LINCARE INC. and
+    # its affiliated providers). Against F1E alone, every one of those 700 distinct providers
+    # resolves into the one organization entity, and therefore into each other.
+    #
+    # A1ES DENIES on a value mismatch. Because every provider here carries its own NPI and the
+    # set is unique (measured: 9,798,758 records, 9,798,758 distinct RECORD_IDs, 0 duplicates,
+    # RECORD_ID == NPI_NUMBER in 200,000/200,000 sampled), any two DISTINCT providers hold
+    # different REF_NPI_ID values and are denied -- they cannot co-resolve however many reference
+    # lists point at them. The organization may still relate to a provider; the providers can no
+    # longer collapse into one another.
+    #
+    # It mirrors the NPI_NUMBER value set rather than just input_row["NPI"] on purpose. A
+    # deactivated NPI and its replacement are the SAME provider and must still resolve; if this
+    # record asserted only its own NPI, the A1ES deny would block exactly that legitimate merge.
+    # Distinct providers still have disjoint value sets, so the guard is unaffected.
+    if len(npi_numbers) == 1:
+        json_data["REF_NPI_ID"] = input_row["NPI"]
+    else:
+        json_data["REF_NPI_IDS"] = [
+            {"REF_NPI_ID": n["NPI_NUMBER"]} for n in npi_numbers
+        ]
+
     #  define anchor point for disclosed relationships back to this NPI from NPI-LOCATIONS, NPI-AFFILIATES, and NPI-OFFICIALS
     json_data["REL_ANCHOR_KEY"] = input_row["NPI"]
     json_data["REL_ANCHOR_DOMAIN"] = "NPI"
