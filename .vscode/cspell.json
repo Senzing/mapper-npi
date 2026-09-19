@@ -4,8 +4,10 @@
   "words": [
     "analysing",
     "CCLA",
+    "cleartext",
     "cntr",
     "CODEOWNER",
+    "codeql",
     "cooldown",
     "disclosable",
     "FILEPERIOD",
@@ -43,6 +45,7 @@
     "tcode",
     "txnmy",
     "UNAVAIL",
+    "unloadable",
     "venv"
   ],
   "ignorePaths": [

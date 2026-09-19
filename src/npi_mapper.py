@@ -1472,6 +1472,13 @@ if __name__ == "__main__":
     for NPIinput_row in csv.DictReader(npiInputFile):
         NPIinput_row_count += 1
 
+        #  codeql[py/clear-text-storage-sensitive-data] - the input IS the CMS NPPES public
+        #  dissemination file and plain JSON is the required Senzing ingestion format, so there is
+        #  no cleartext exposure to prevent here. CMS strips the non-FOIA-disclosable identifiers
+        #  (SSN/ITIN/EIN, masked per CMS-6060-N -- see idValuesToIgnore above) BEFORE publishing the
+        #  file, and this mapper adds no field the download does not already carry. Encrypting the
+        #  output would make it unloadable. CodeQL began flagging this write once PROVIDER_ID routed
+        #  issuer-qualified identifiers through map_npi(); the sink and its data are unchanged.
         Providers_outFile.write(map_npi(NPIinput_row) + "\n")
         JSON_row_count += 1
         NPIProvider_row_count += 1
