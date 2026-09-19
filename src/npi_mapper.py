@@ -120,6 +120,30 @@ def drop_empty_attributes(record):
     return record
 
 
+#  NPPES "Other Provider Identifier Type Code" -> issuer name.
+#  Source: NPPES Data Dissemination code values, Exhibit 1-11 ("Other Provider Type Code"):
+#      01 OTHER      05 MEDICAID
+#  Measured in the 2026-09 file: these are the only two codes present (01: 46,960, 05: 42,214).
+#  The type code is ALWAYS populated; the free-text Issuer column is populated for 01 and is
+#  EMPTY for every 05 row, so the code is what guarantees every identifier carries an issuer.
+OTHER_PROVIDER_TYPE_CODES = {"01": "OTHER", "05": "MEDICAID"}
+
+
+def provider_id_issuer(type_code, issuer_text):
+    """Issuer for a PROVIDER_ID: the reported issuer, else the type code's meaning.
+
+    PROVIDER_ID is an FF feature whose ISSUER element is COMPARED, so the issuer is what
+    distinguishes two providers that happen to share a group-billing number (measured: one
+    Medicaid number on up to 56 distinct NPIs, and 344428256/OH issued by both EMERALD and
+    FRONTPATH). An empty issuer would collapse that distinction, so never emit one.
+    """
+    issuer = (issuer_text or "").strip()
+    if issuer:
+        return issuer
+    code = (type_code or "").strip()
+    return OTHER_PROVIDER_TYPE_CODES.get(code, ("TYPE_" + code) if code else "UNKNOWN")
+
+
 def derived_record_id(npi, *parts):
     """Deterministic RECORD_ID for a child record: <NPI>-<12 hex of sha1 over its source fields>.
 
@@ -877,53 +901,35 @@ def map_npi(input_row):
             ):
                 opIDs_Mapped[key1] = True
 
-                # --jb: moved to their own feature type
-                if (
-                    input_row["Other Provider Identifier Type Code_" + str(looper)]
-                    == "05"
-                ):
-                    updateStat(
-                        "PROVIDER_ID-MEDICARE-05",
-                        input_row["Other Provider Identifier State_" + str(looper)],
-                        input_row["Other Provider Identifier_" + str(looper)],
-                    )
-                    # opIDs.append({"OTHER_ID_TYPE": 'OTHER_PROV_ID' , "OTHER_ID_NUMBER": input_row['Other Provider Identifier_' + str(looper)], "OTHER_ID_COUNTRY": input_row['Other Provider Identifier State_' + str(looper)] })
-                    opIDs.append(
-                        {
-                            "MEDICAID_PROVIDER_ID": input_row[
-                                "Other Provider Identifier_" + str(looper)
-                            ],
-                            "MEDICAID_PROVIDER_STATE": input_row[
-                                "Other Provider Identifier State_" + str(looper)
-                            ],
-                            "MEDICAID_PROVIDER_ISSUER": input_row[
-                                "Other Provider Identifier Issuer_" + str(looper)
-                            ],
-                        }
-                    )
-                else:
-                    updateStat(
-                        "PROVIDER_ID-OTHER-"
-                        + input_row[
-                            "Other Provider Identifier Type Code_" + str(looper)
+                #  ONE feature for every provider identifier; the NPPES type code (or the
+                #  reported issuer) becomes the ISSUER element, which PROVIDER_ID compares.
+                tcode = input_row[
+                    "Other Provider Identifier Type Code_" + str(looper)
+                ]
+                updateStat(
+                    "PROVIDER_ID-"
+                    + OTHER_PROVIDER_TYPE_CODES.get(
+                        (tcode or "").strip(), "TYPE_" + (tcode or "").strip()
+                    ),
+                    input_row["Other Provider Identifier State_" + str(looper)],
+                    input_row["Other Provider Identifier_" + str(looper)],
+                )
+                opIDs.append(
+                    {
+                        "PROVIDER_ID_NUMBER": input_row[
+                            "Other Provider Identifier_" + str(looper)
                         ],
-                        input_row["Other Provider Identifier State_" + str(looper)],
-                        input_row["Other Provider Identifier_" + str(looper)],
-                    )
-                    # opIDs.append({"OTHER_ID_TYPE": 'MEDICAID_PROV_ID' , "OTHER_ID_NUMBER": input_row['Other Provider Identifier_' + str(looper)], "OTHER_ID_COUNTRY": input_row['Other Provider Identifier State_' + str(looper)] })
-                    opIDs.append(
-                        {
-                            "OTHER_PROVIDER_ID": input_row[
-                                "Other Provider Identifier_" + str(looper)
-                            ],
-                            "OTHER_PROVIDER_STATE": input_row[
-                                "Other Provider Identifier State_" + str(looper)
-                            ],
-                            "OTHER_PROVIDER_ISSUER": input_row[
+                        "PROVIDER_ID_STATE": input_row[
+                            "Other Provider Identifier State_" + str(looper)
+                        ],
+                        "PROVIDER_ID_ISSUER": provider_id_issuer(
+                            tcode,
+                            input_row[
                                 "Other Provider Identifier Issuer_" + str(looper)
                             ],
-                        }
-                    )
+                        ),
+                    }
+                )
 
         looper += 1
 
