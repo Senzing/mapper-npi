@@ -724,10 +724,28 @@ def map_npi(input_row):
 
     if input_row["Provider First Line Business Practice Location Address"]:
 
-        if input_row["Entity Type Code"] == "1":
-            address_label = "PRIMARY"
-        else:
-            address_label = "BUSINESS"
+        # NPPES names this field "Provider Business Practice Location Address": it is the
+        # physical place of practice, and it is a BUSINESS address for an individual provider
+        # exactly as much as for an organization. CMS publishes no home address for anyone, so
+        # there is no HOME/BUSINESS distinction to preserve here.
+        #
+        # It was previously labelled PRIMARY for Entity Type Code 1, which split one real-world
+        # address across two usage types by entity type (measured: 7,471,371 PRIMARY vs 1,972,058
+        # BUSINESS) while the phone for that SAME location was already BUSINESS-LOCATION for all
+        # 9,441,417 records. The referencing BrightQuery/ODO corpus is 100% ADDR_TYPE=BUSINESS.
+        #
+        # This IS an ER change, not a cosmetic one. Usage types are free-form, but only BUSINESS
+        # on ADDRESS/GEO_LOC and MOBILE on PHONE carry any meaning to the engine (Master,
+        # 2026-09-19); every other label is inert. Labelling 7,471,371 individual providers'
+        # practice addresses PRIMARY therefore withheld the one address usage type that means
+        # something, on 76% of the corpus.
+        #
+        # ⚠ Do not be misled by get_record_preview: the same address under PRIMARY_ and BUSINESS_
+        # returns the byte-identical ADDRESS FEAT_DESC '3500 CENTRAL AVE KEARNEY NE 688472944',
+        # differing only in USAGE_TYPE. That shows the compared VALUE is unchanged; it does NOT
+        # show the engine ignores the usage type, and an earlier revision of this comment wrongly
+        # concluded it did.
+        address_label = "BUSINESS"
 
         updateStat(
             json_data["DATA_SOURCE"],
