@@ -319,7 +319,10 @@ def flush_affiliate_records(out_file):
     written = 0
     for record_id, entry in affiliate_records.items():
         features = list(entry["features"])
-        for pointer in entry["pointers"]:
+        # sorted(): a set iterates in per-process hash order (PYTHONHASHSEED is not pinned), which
+        # would make the REL_POINTER block -- and so the record bytes -- differ between two runs on
+        # identical input. Every other emission path here is deterministic; this one must be too.
+        for pointer in sorted(entry["pointers"]):
             features.append(
                 {
                     "REL_POINTER_DOMAIN": "NPI",

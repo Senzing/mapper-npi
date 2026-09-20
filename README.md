@@ -14,6 +14,7 @@ Usage:
 ```console
 python npi_mapper.py --help
 usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME] [-w WORKDIR]
+                     [-S SHUFFLEBUFFER]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -28,6 +29,11 @@ optional arguments:
   -w WORKDIR, --workDir WORKDIR
                         optional local directory for the temporary NPPES.db sqlite file (default: a fresh
                         system temp directory; never the source directory, which may be a shared/read-only mount)
+  -S SHUFFLEBUFFER, --shuffleBuffer SHUFFLEBUFFER
+                        records held in the in-memory shuffle reservoir per output file (default 250000; 0 disables
+                        shuffling). NPPES is sorted by NPI, so same-entity records are adjacent and loading them in
+                        file order serialises the consumer fleet on one lock -- see ShuffleWriter. Cost is roughly
+                        this many records resident per output file.
 ```
 
 ## Contents
