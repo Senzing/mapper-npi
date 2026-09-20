@@ -543,7 +543,7 @@ def map_endpoints(inNPI):
             # An affiliate row with no name, no address and no endpoint has no ER content: every
             # such row would hash to the SAME er_record_id (RECORD_TYPE only) and their provider
             # pointers would pile onto one hub record relating unrelated providers. Measured 0 of
-            # 49,670 on the September 2026 file, so this is a guard, not a behaviour change.
+            # 49,670 on the September 2026 file, so this is a guard, not a behavior change.
             if not any(k != "RECORD_TYPE" for f in er_features for k in f):
                 updateStat(ep_data["DATA_SOURCE"], "AFFILIATE_SKIPPED_NO_ER_CONTENT", ep_data["RECORD_ID"])
                 resultRow = cursor1.fetchone()
