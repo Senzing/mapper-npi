@@ -83,6 +83,53 @@ def is_placeholder_name(value):
     return value is None or str(value).strip().upper() in NAME_PLACEHOLDERS
 
 
+class ShuffleWriter:
+    """File wrapper that shuffles records AS THEY ARE WRITTEN, in bounded memory.
+
+    NPPES ships sorted by NPI, so records belonging to one entity are adjacent. Loaded in
+    that order every consumer thread works the same entity at once and they all queue on a
+    single advisory lock: measured on a 36-container fleet, sorted input put 243 waiters on
+    just 2 lock objects at 49 rec/s, while the same data shuffled spread the same load over
+    25-26 objects at 958 rec/s.
+
+    Shuffling the finished file instead (`shuf`) needs the whole file resident or a second
+    temp copy -- ~11 GB for the provider output alone. This keeps a fixed-size reservoir and
+    evicts a RANDOM slot on each write, so memory is capped at `size` records and no second
+    copy of the data is ever written.
+
+    A record can move at most `size` positions, which is the guarantee that matters: any
+    cluster shorter than the buffer is torn apart. It is deliberately NOT a uniform shuffle
+    of the whole file -- that cannot be done in one streaming pass -- and it does not need to
+    be. Breaking adjacency is the entire requirement.
+
+    seed is fixed by default so a run is reproducible; pass a different one to vary it.
+    """
+
+    def __init__(self, handle, size, seed=1729):
+        self.handle = handle
+        self.size = size
+        self.buffer = []
+        self.rng = random.Random(seed)
+
+    def write(self, text):
+        if self.size <= 0:  # shuffling disabled -- straight through
+            self.handle.write(text)
+            return
+        if len(self.buffer) < self.size:
+            self.buffer.append(text)
+            return
+        slot = self.rng.randrange(self.size)
+        self.handle.write(self.buffer[slot])
+        self.buffer[slot] = text
+
+    def close(self):
+        self.rng.shuffle(self.buffer)  # drain order must not reproduce insertion order
+        for text in self.buffer:
+            self.handle.write(text)
+        self.buffer = []
+        self.handle.close()
+
+
 def is_deactivated(input_row):
     """True when this NPI is CURRENTLY deactivated: a deactivation date and no reactivation date.
 
@@ -1320,6 +1367,17 @@ if __name__ == "__main__":
         help="optional local directory for the temporary NPPES.db sqlite file (default: a fresh system temp directory; "
         "never the source directory, which may be a shared/read-only mount)",
     )
+    argParser.add_argument(
+        "-S",
+        "--shuffleBuffer",
+        dest="shuffleBuffer",
+        type=int,
+        default=250000,
+        help="records held in the in-memory shuffle reservoir per output file (default 250000; "
+        "0 disables shuffling). NPPES is sorted by NPI, so same-entity records are adjacent and "
+        "loading them in file order serialises the consumer fleet on one lock -- see ShuffleWriter. "
+        "Cost is roughly this many records resident per output file.",
+    )
     parms = argParser.parse_args()
 
     if (parms.filePeriod and len(parms.filePeriod) > 0) and (
@@ -1567,18 +1625,18 @@ if __name__ == "__main__":
     npiInputFile = open(npiDataFileSpec, "r", encoding="utf-8")
 
     if outputOneFile:
-        one_outFile = open(outputFilePath, "w", encoding="utf-8")
+        one_outFile = ShuffleWriter(open(outputFilePath, "w", encoding="utf-8"), parms.shuffleBuffer)
         Providers_outFile = one_outFile
         Officials_outFile = one_outFile
         Affiliations_outFile = one_outFile
         Locations_outFile = one_outFile
         Deactivated_outFile = one_outFile
     else:
-        Providers_outFile = open(Providers_outputFileSpec, "w", encoding="utf-8")
-        Officials_outFile = open(Officials_outputFileSpec, "w", encoding="utf-8")
-        Affiliations_outFile = open(Affiliations_outputFileSpec, "w", encoding="utf-8")
-        Locations_outFile = open(Locations_outputFileSpec, "w", encoding="utf-8")
-        Deactivated_outFile = open(Deactivated_outputFileSpec, "w", encoding="utf-8")
+        Providers_outFile = ShuffleWriter(open(Providers_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Officials_outFile = ShuffleWriter(open(Officials_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Affiliations_outFile = ShuffleWriter(open(Affiliations_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Locations_outFile = ShuffleWriter(open(Locations_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Deactivated_outFile = ShuffleWriter(open(Deactivated_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
 
     NPIinput_row_count = 0
     NPIProvider_row_count = 0
