@@ -434,8 +434,8 @@ def map_locations(inNPI, inName, inType):
 #  Map Endpoint Reference file for this NPI
 # -------------------------------------------------------------
 def map_endpoints(inNPI):
-    global NPIAffiliations_row_count
-    global JSON_row_count
+    # No globals: this function only accumulates into affiliate_records; the counters are
+    # advanced by flush_affiliate_records() when the records are actually written.
 
     endpointList = (
         []
@@ -1078,9 +1078,7 @@ def map_npi(input_row):
                 + "|"
                 + input_row["Provider License Number State Code_" + str(looper)]
             )
-            if key1 not in pLicNums_Mapped and check_id_value(
-                input_row["Provider License Number_" + str(looper)].split()
-            ):
+            if key1 not in pLicNums_Mapped:  # check_id_value already passed in the outer if
                 pLicNums_Mapped[key1] = True
                 # --jb: moved to its own feature type
                 # pLicNums.append({"OTHER_ID_TYPE": 'PROV_LIC_NUM' , "OTHER_ID_NUMBER": input_row['Provider License Number_' + str(looper)] ,"OTHER_ID_COUNTRY": input_row['Provider License Number State Code_' + str(looper)]})
