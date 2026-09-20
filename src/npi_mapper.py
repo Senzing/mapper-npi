@@ -272,6 +272,72 @@ def derived_record_id(npi, *parts):
     return str(npi) + "-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
+#  Affiliate organizations, accumulated across every NPI and emitted ONCE each at the end.
+#  Keyed by er_record_id() -- see map_endpoints() for why.
+affiliate_records = {}
+
+
+def er_record_id(features):
+    """RECORD_ID derived from the record's ER content alone: sha1 over the normalized,
+    sorted features, EXCLUDING the REL_* disclosure features.
+
+    Two affiliate rows describing the same organization differ only in which provider they
+    point at, so including the REL_POINTER in the identity makes every copy unique and the
+    duplicates survive into the load. Hashing only the ER content makes genuine duplicates
+    collide on one RECORD_ID, so Senzing dedupes them at the RECORD level and never has to
+    resolve them together at all.
+
+    That matters at this scale: NPPES carries 130,952 affiliate rows describing just 9,363
+    distinct organizations -- 14x duplication. SOUTHERN CALIFORNIA PERMANENTE MEDICAL GROUP
+    alone appears 19,062 times. Loaded as distinct records they are 19,062 concurrent merges
+    onto a single entity, which is what produced 6,680-member entities, an advisory-lock
+    convoy and a 23k dead-letter queue that drained at 0.044/s.
+
+    Normalization (strip, collapse whitespace, upper) and sorting are both required: the same
+    organization arrives with incidental case and spacing differences, and feature order is
+    not stable across rows. json.dumps rather than a join, for the same ambiguity reason as
+    derived_record_id().
+    """
+    canonical = []
+    for feature in features:
+        if any(k.startswith("REL_") for k in feature):
+            continue
+        canonical.append(
+            sorted(
+                (k, " ".join(str(v).split()).upper())
+                for k, v in feature.items()
+                if v not in (None, "")
+            )
+        )
+    canonical.sort()
+    key = json.dumps(canonical, ensure_ascii=False)
+    return "AFFIL-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+
+
+def flush_affiliate_records(out_file):
+    """Emit one record per distinct affiliate, carrying every provider pointer it accumulated."""
+    written = 0
+    for record_id, entry in affiliate_records.items():
+        features = list(entry["features"])
+        for pointer in entry["pointers"]:
+            features.append(
+                {
+                    "REL_POINTER_DOMAIN": "NPI",
+                    "REL_POINTER_KEY": pointer,
+                    "REL_POINTER_ROLE": "Affiliate",
+                }
+            )
+        record = {
+            "DATA_SOURCE": "NPI-AFFILIATIONS",
+            "RECORD_ID": record_id,
+            "FEATURES": features,
+        }
+        out_file.write(json.dumps(drop_empty_attributes(record)) + "\n")
+        updateStat("NPI-AFFILIATIONS", "POINTERS_PER_AFFILIATE", str(len(entry["pointers"])))
+        written += 1
+    return written
+
+
 # -------------------------------------------------------------
 #  Map Provider Locations Reference file for this NPI
 # -------------------------------------------------------------
@@ -462,11 +528,16 @@ def map_endpoints(inNPI):
                     if ep_feature not in endpointList:
                         endpointList.append(ep_feature)
 
-        # --jb: write it out to affiliate file
+        # --jb: accumulate the affiliate; it is emitted once, at the end, by
+        # flush_affiliate_records(). Identical organizations collapse onto one er_record_id()
+        # and their provider pointers aggregate onto that single record.
         if rsltRecord["IS_AFFILIATE"] == "Y":
-            Affiliations_outFile.write(json.dumps(drop_empty_attributes(ep_data)) + "\n")
-            JSON_row_count += 1
-            NPIAffiliations_row_count += 1
+            er_features = [f for f in ep_features if not any(k.startswith("REL_") for k in f)]
+            record_id = er_record_id(er_features)
+            entry = affiliate_records.setdefault(
+                record_id, {"features": er_features, "pointers": set()}
+            )
+            entry["pointers"].add(str(inNPI))
 
         resultRow = cursor1.fetchone()
 
@@ -1748,6 +1819,13 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------
     # Wrap-up
     npiInputFile.close()
+
+    # Affiliates were accumulated, not written per (provider, affiliate) pair: emit them now, one
+    # record per distinct organization, each carrying every provider pointer it collected.
+    affiliate_target = one_outFile if outputOneFile else Affiliations_outFile
+    NPIAffiliations_row_count = flush_affiliate_records(affiliate_target)
+    JSON_row_count += NPIAffiliations_row_count
+
     if outputOneFile:
         one_outFile.close()
     else:
