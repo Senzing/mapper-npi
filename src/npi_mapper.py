@@ -62,6 +62,7 @@ import csv
 import hashlib
 import json
 import argparse
+import atexit
 import datetime
 import time
 import os
@@ -97,8 +98,11 @@ class ShuffleWriter:
     evicts a RANDOM slot on each write, so memory is capped at `size` records and no second
     copy of the data is ever written.
 
-    A record can move at most `size` positions, which is the guarantee that matters: any
-    cluster shorter than the buffer is torn apart. It is deliberately NOT a uniform shuffle
+    A record leaves the reservoir when its slot is randomly chosen, so its displacement is
+    geometric with mean about `size` records -- there is NO hard bound on how far one record
+    can move. The guarantee that matters is the other direction: adjacent input records land
+    in independent slots, so any cluster shorter than the buffer is torn apart. It is
+    deliberately NOT a uniform shuffle
     of the whole file -- that cannot be done in one streaming pass -- and it does not need to
     be. Breaking adjacency is the entire requirement.
 
@@ -357,11 +361,11 @@ def map_locations(inNPI, inName, inType):
     sql += ' "Provider Secondary Practice Location Address - Country Code (If outside U.S.)" as COUNTRY,'
     sql += ' "Provider Secondary Practice Location Address - Telephone Number"               as PH1,'
     sql += ' "Provider Practice Location Address - Fax Number"                               as PH2'
-    sql += " from PL where pl.NPI = '" + str(inNPI) + "'"
+    sql += " from PL where pl.NPI = ?"
     sql += " order by 1,2,3,4,5,6,7,8"  # deterministic output order across runs and reference-file row orders
 
     plObj = conn.cursor()
-    cursor1 = plObj.execute(sql)
+    cursor1 = plObj.execute(sql, (str(inNPI),))
     hdr1 = [col[0] for col in plObj.description]
     resultRow = cursor1.fetchone()
     while resultRow:
@@ -447,11 +451,11 @@ def map_endpoints(inNPI):
     sql += ' "Affiliation Address State"        as STATE,'
     sql += ' "Affiliation Address Country"      as COUNTRY,'
     sql += ' "Affiliation Address Postal Code"  as POSTAL_CODE'
-    sql += " From ENDPOINT where NPI = '" + str(inNPI) + "'"
+    sql += " From ENDPOINT where NPI = ?"
     sql += " order by 1,2,3,4,5,6,7,8,9"  # deterministic output order across runs and reference-file row orders
 
     epObj = conn.cursor()
-    cursor1 = epObj.execute(sql)
+    cursor1 = epObj.execute(sql, (str(inNPI),))
     hdr1 = [col[0] for col in epObj.description]
     resultRow = cursor1.fetchone()
     while resultRow:
@@ -558,11 +562,11 @@ def map_othernames(inNPI):
     sql = "select distinct "
     sql += ' "Provider Other Organization Name"            as name1,'
     sql += ' "Provider Other Organization Name Type Code"  as typCd'
-    sql += " from OTHERNAME where NPI = '" + str(inNPI) + "'"
+    sql += " from OTHERNAME where NPI = ?"
     sql += " order by 1,2"  # deterministic output order across runs and reference-file row orders
 
     onObj = conn.cursor()
-    onCur = onObj.execute(sql)
+    onCur = onObj.execute(sql, (str(inNPI),))
     hdr1 = [col[0] for col in onObj.description]
     resultRow = onCur.fetchone()
     while resultRow:
@@ -1048,8 +1052,10 @@ def map_npi(input_row):
     #  GENDER
     #  NPPES renamed "Provider Gender Code" to "Provider Sex Code" (2025+ dissemination files);
     #  accept either so both current and older files map.
+    #  `not sex_code` (not `is None`): a 2025+ file has the new column, so a blank there must
+    #  still fall through to the old column rather than silently dropping the gender.
     sex_code = input_row.get("Provider Sex Code")
-    if sex_code is None:
+    if not sex_code:
         sex_code = input_row.get("Provider Gender Code", "")
     if sex_code:
         updateStat(json_data["DATA_SOURCE"], "GENDER", sex_code)
@@ -1549,6 +1555,20 @@ if __name__ == "__main__":
                 0,
                 0,
             )
+        else:
+            # Same disposition as the other three reference files: a missing endpoint file
+            # used to be reported and then silently produced zero NPI-LOCATIONS endpoints.
+            abortRun = 1
+            msgOut(
+                0,
+                " Endpoint reference data Input File Name  : "
+                + epDataFileSpec
+                + "   <-  is not a file or does not exist",
+                "E",
+                "",
+                2,
+                0,
+            )
 
         outputFilePath = os.path.abspath(parms.outputFilePath)
         if os.path.isdir(outputFilePath):
@@ -1745,6 +1765,9 @@ if __name__ == "__main__":
     else:
         workDir = tempfile.mkdtemp(prefix="npi_mapper_")
         workDirIsTemp = True
+        # The normal-path cleanup at the end of the run does not execute on an unhandled
+        # exception; register the removal so a crash cannot orphan a multi-GB temp directory.
+        atexit.register(shutil.rmtree, workDir, ignore_errors=True)
     dbname = os.path.join(workDir, "NPPES.db")
     dbExists = os.path.exists(dbname)
     if dbExists:  # --purge and reload
