@@ -540,6 +540,14 @@ def map_endpoints(inNPI):
         # and their provider pointers aggregate onto that single record.
         if rsltRecord["IS_AFFILIATE"] == "Y":
             er_features = [f for f in ep_features if not any(k.startswith("REL_") for k in f)]
+            # An affiliate row with no name, no address and no endpoint has no ER content: every
+            # such row would hash to the SAME er_record_id (RECORD_TYPE only) and their provider
+            # pointers would pile onto one hub record relating unrelated providers. Measured 0 of
+            # 49,670 on the September 2026 file, so this is a guard, not a behaviour change.
+            if not any(k != "RECORD_TYPE" for f in er_features for k in f):
+                updateStat(ep_data["DATA_SOURCE"], "AFFILIATE_SKIPPED_NO_ER_CONTENT", ep_data["RECORD_ID"])
+                resultRow = cursor1.fetchone()
+                continue
             record_id = er_record_id(er_features)
             entry = affiliate_records.setdefault(
                 record_id, {"features": er_features, "pointers": set()}
@@ -681,7 +689,6 @@ def map_npi(input_row):
     json_data = {}
     features = []
 
-    currNPI = input_row["NPI"]
 
     # --required attributes
     #

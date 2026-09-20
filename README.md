@@ -104,7 +104,7 @@ _Note the period date range "20050523-20201108" will be based on the date you do
 Then run the mapper. Example usage:
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
+python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
 ```
 
 Because, the -o parameter only specifies a directory, the following 5 output files will be created:
@@ -118,7 +118,7 @@ Because, the -o parameter only specifies a directory, the following 5 output fil
 or to create one file with all the records, specify the path and file name in the -o parameter like so ...
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
+python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
 ```
 
 Finally, specifying the -l logFileName writes out the stats and examples of what gets mapped into Senzing. It can be quite useful

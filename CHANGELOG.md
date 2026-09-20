@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entity are adjacent in the file; loaded in that order every consumer thread works the same
   entity at once and they all queue on one lock. Adjacent input records land in independent
   reservoir slots, which is what breaks that adjacency (there is no hard bound on how far one
-  record can move -- eviction is random), and no second copy of the file is ever written. The drain order at close is shuffled too, so it cannot reproduce insertion order.
+  record can move -- eviction is random), and no second copy of the file is ever written. The
+  drain order at close is shuffled too, so it cannot reproduce insertion order.
 
 ### Changed
 
