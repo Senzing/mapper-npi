@@ -465,7 +465,8 @@ def map_endpoints(inNPI):
 
         if rsltRecord["IS_AFFILIATE"] == "Y":
             ep_data["DATA_SOURCE"] = "NPI-AFFILIATIONS"
-            ep_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
+            # No RECORD_ID here: affiliates are emitted by flush_affiliate_records() under
+            # er_record_id(); diagnostics below cite the provider NPI the row came from instead.
             ep_data["FEATURES"] = ep_features
             add_feature(ep_features, {"RECORD_TYPE": "ORGANIZATION"})
             updateStat("DATA_SOURCES", ep_data["DATA_SOURCE"])
@@ -479,7 +480,7 @@ def map_endpoints(inNPI):
                     {"NAME_TYPE": "PRIMARY", "NAME_ORG": rsltRecord["NAME_ORG"]},
                 )
             else:
-                updateStat(ep_data["DATA_SOURCE"], "MISSING_NAME", ep_data["RECORD_ID"])
+                updateStat(ep_data["DATA_SOURCE"], "MISSING_NAME", "NPI " + str(inNPI))
 
             if rsltRecord["ADDR1"]:
                 # BUSINESS marks a distinct physical location, which is what keeps two affiliations
@@ -545,7 +546,7 @@ def map_endpoints(inNPI):
             # pointers would pile onto one hub record relating unrelated providers. Measured 0 of
             # 49,670 on the September 2026 file, so this is a guard, not a behavior change.
             if not any(k != "RECORD_TYPE" for f in er_features for k in f):
-                updateStat(ep_data["DATA_SOURCE"], "AFFILIATE_SKIPPED_NO_ER_CONTENT", ep_data["RECORD_ID"])
+                updateStat(ep_data["DATA_SOURCE"], "AFFILIATE_SKIPPED_NO_ER_CONTENT", "NPI " + str(inNPI))
                 resultRow = cursor1.fetchone()
                 continue
             record_id = er_record_id(er_features)
@@ -1561,17 +1562,17 @@ if __name__ == "__main__":
                 0,
             )
         else:
-            # Same disposition as the other three reference files: a missing endpoint file
-            # used to be reported and then silently produced zero NPI-LOCATIONS endpoints.
-            abortRun = 1
+            # Optional by design (the original code had no else here): older disseminations and
+            # partial pulls may lack the endpoint file. Say so loudly instead of silently producing
+            # zero NPI-LOCATIONS endpoints -- but do not abort, that would break existing users.
             msgOut(
                 0,
                 " Endpoint reference data Input File Name  : "
                 + epDataFileSpec
-                + "   <-  is not a file or does not exist",
-                "E",
+                + "   <-  not found; NO endpoint/affiliation data will be mapped",
+                "W",
                 "",
-                2,
+                0,
                 0,
             )
 

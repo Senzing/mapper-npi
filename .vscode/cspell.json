@@ -42,6 +42,7 @@
     "OUTPUTFILEPATH",
     "parms",
     "PERMANENTE",
+    "pycache",
     "pylint",
     "pytest",
     "PYTHONHASHSEED",
