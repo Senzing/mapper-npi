@@ -12,19 +12,31 @@ Loading this data into Senzing requires additional features and configurations. 
 Usage:
 
 ```console
-python npi_mapper.py --help
+python3 src/npi_mapper.py --help
 usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME]
+                     [-w WORKDIR] [-S SHUFFLEBUFFER]
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -i SOURCEDIR, --sourceDir SOURCEDIR
                         directory in which the source files are located
   -f FILEPERIOD, --filePeriod FILEPERIOD
-                        the period portion of the NPPES file naming convention such as "20050523-20201108"
+                        the period portion of the NPPES file naming convention such as
+                        "20050523-20201108"
   -o OUTPUTFILEPATH, --outFileDir OUTPUTFILEPATH
                         the file or directory to write the JSON files to
   -l LOGFILENAME, --logFileName LOGFILENAME
                         optional statistics output file name
+  -w WORKDIR, --workDir WORKDIR
+                        optional local directory for the temporary NPPES.db sqlite file (default:
+                        a fresh system temp directory; never the source directory, which may be a
+                        shared/read-only mount)
+  -S SHUFFLEBUFFER, --shuffleBuffer SHUFFLEBUFFER
+                        records held in the in-memory shuffle reservoir per output file (default
+                        250000; 0 disables shuffling). NPPES is sorted by NPI, so same-entity
+                        records are adjacent and loading them in file order serialises the
+                        consumer fleet on one lock -- see ShuffleWriter. Cost is roughly this many
+                        records resident per output file.
 ```
 
 ## Contents
@@ -38,7 +50,7 @@ optional arguments:
 
 ### Prerequisites
 
-- python 3.6 or higher
+- python 3.10 or higher (the `--help` text above is what argparse prints on 3.10+; CI runs 3.10-3.13)
 - Senzing API version 2.1 or higher
 - pandas (pip3 install pandas)
 
@@ -63,6 +75,19 @@ This will step you through the process of adding the data sources, features, att
 Senzing. After each command you will see a status message saying "success" or "already exists". For instance, if you run the script twice, the second time through they will all
 say "already exists" which is OK.
 
+#### Upgrading from an earlier mapper version
+
+Re-run [npi_config_updates.g2c] on an existing instance. It now registers `PROVIDER_ID`
+(behavior `FF`, with `ISSUER` compared), which consolidates the separate `OTHER_PROVIDER_ID`
+and `MEDICAID_PROVIDER_ID` features, and `REF_NPI_ID` (behavior `A1ES`). The features it
+replaces are deliberately left registered: deleting a feature from a configuration that
+already has data loaded against it is not safe.
+
+The `RECORD_ID` scheme also changed for `NPI-LOCATIONS` and `NPI-AFFILIATIONS` -- both are now
+derived from record content rather than a row ordinal. Senzing keys records on
+(`DATA_SOURCE`, `RECORD_ID`), so re-loading onto an existing repository leaves the old copies
+behind as duplicates. Purge those two data sources before re-loading them.
+
 ### Running the mapper
 
 Download the raw files from: [https://download.cms.gov/nppes/NPI_Files.html]
@@ -79,20 +104,21 @@ _Note the period date range "20050523-20201108" will be based on the date you do
 Then run the mapper. Example usage:
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
+python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output
 ```
 
-Because, the -o parameter only specifies a directory, the following 4 output files will be created:
+Because, the -o parameter only specifies a directory, the following 5 output files will be created:
 
 - NPI_LOCATIONS_20050523-20201108.json
 - NPI_OFFICIALS_20050523-20201108.json
 - NPI_PROVIDERS_20050523-20201108.json
 - NPI_AFFILIATIONS_20050523-20201108.json
+- NPI_DEACTIVE_20050523-20201108.json
 
 or to create one file with all the records, specify the path and file name in the -o parameter like so ...
 
 ```console
-python3 npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
+python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
 ```
 
 Finally, specifying the -l logFileName writes out the stats and examples of what gets mapped into Senzing. It can be quite useful
@@ -107,6 +133,7 @@ python3 G2Loader.py -f ./output/NPI_LOCATIONS_20050523-20201108.json
 python3 G2Loader.py -f ./output/NPI_OFFICIALS_20050523-20201108.json
 python3 G2Loader.py -f ./output/NPI_PROVIDERS_20050523-20201108.json
 python3 G2Loader.py -f ./output/NPI_AFFILIATIONS_20050523-20201108.json
+python3 G2Loader.py -f ./output/NPI_DEACTIVE_20050523-20201108.json
 ```
 
 or if those are the only files in the output directory you can use a wild card like so ...
