@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entity at once and they all queue on one lock. Adjacent input records land in independent
   reservoir slots, which is what breaks that adjacency (there is no hard bound on how far one
   record can move -- eviction is random), and no second copy of the file is ever written. The
-  drain order at close is shuffled too, so it cannot reproduce insertion order.
+  drain order at close is shuffled too, so it cannot reproduce insertion order. Consequence: up to
+  `shuffleBuffer` records per file sit in memory until `close()`, so an output file is complete only
+  after a clean exit -- a crashed run must be re-run, as it always had to be.
 
 ### Changed
 
@@ -46,7 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Currently-deactivated NPIs (a deactivation date and no reactivation date) are now their own data
   source, `NPI_DEACTIVE`, written to a fifth output file `NPI_DEACTIVE_<period>.json`, so an entity
   that touches a retired NPI is directly queryable. They keep `NPI_NUMBER`, `REF_NPI_ID` and
-  `REL_ANCHOR` and carry no `RECORD_TYPE`. An NPI that was deactivated and later reactivated is
+  `REL_ANCHOR` and carry no `RECORD_TYPE` -- except the 45,630 (of 355,329) that have an organization
+  row in `othername_pfile`, which are typed `ORGANIZATION` from that name (Entity Type Code is blank on
+  every deactivated row, and no Entity Type 1 NPI ever appears in that file). An NPI that was deactivated and later reactivated is
   active again and stays in `NPI-PROVIDERS`.
 - Every resolution feature is now emitted in a `FEATURES` array, one object per feature instance,
   instead of at the record root with the usage type encoded as a name prefix. `DATA_SOURCE`,
