@@ -16,9 +16,10 @@
 #   NPI-PROVIDERS   -  Main NPI data with Othernames included
 #                   -  RECORD_ID: NPI
 #   NPI-OFFICIALS   -  Authorized Personnel for the NPI
-#   NPI-AFFILIATIONS-  Endpoint data with Email and Address
-#                   -  RECORD_ID: NPI-<hash>  deterministic sha1 prefix of the affiliation's source fields
-#                   -  Anchored back to NPI
+#   NPI-AFFILIATIONS-  Endpoint data with Email and Address, one record per DISTINCT organization
+#                   -  RECORD_ID: AFFIL-<hash>  sha1 prefix of the record's normalized ER content (REL_*
+#                      excluded), so identical organizations collapse onto one record (er_record_id)
+#                   -  REL_POINTER to every provider NPI that listed the organization (aggregated)
 #   NPI-LOCATIONS   -  Provider Locations date with address & Phone for these secondary locations
 #                   -  RECORD_ID: NPI-<hash>  deterministic sha1 prefix of the location's source fields
 #                   -  Anchored back to NPI
