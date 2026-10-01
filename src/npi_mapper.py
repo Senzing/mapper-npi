@@ -245,6 +245,25 @@ OTHER_LAST_NAME_TYPE_CODES = {
 OTHER_PROVIDER_TYPE_CODES = {"01": "OTHER", "05": "MEDICAID"}
 
 
+#  NUCC Health Care Provider Taxonomy code -> description, loaded from -t when given. NPPES ships the
+#  code only; the NPI Registry shows "Classification, Specialization" (e.g. 1223G0001X ->
+#  "Dentist, General Practice"), so the description is built the same way, not from Display Name.
+TAXONOMY_DESCRIPTIONS = {}
+
+
+def load_taxonomy_descriptions(file_spec):
+    """Read a NUCC nucc_taxonomy_<ver>.csv into {code: "Classification, Specialization"}."""
+    descriptions = {}
+    with open(file_spec, encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            code = (row.get("Code") or "").strip()
+            parts = [(row.get(k) or "").strip() for k in ("Classification", "Specialization")]
+            desc = ", ".join(p for p in parts if p) or (row.get("Display Name") or "").strip()
+            if code and desc:
+                descriptions[code] = desc
+    return descriptions
+
+
 def provider_id_issuer(type_code, issuer_text):
     """Issuer for a PROVIDER_ID: the reported issuer, else the type code's meaning.
 
@@ -644,6 +663,7 @@ def map_auth(input_row, npi_name):
     if input_row["Authorized Official Name Prefix Text"]:
         name["NAME_PREFIX"] = input_row["Authorized Official Name Prefix Text"]
     if input_row["Authorized Official Name Suffix Text"]:
+        updateStat(auth_data["DATA_SOURCE"], "NAME_SUFFIX: " + input_row["Authorized Official Name Suffix Text"])
         name["NAME_SUFFIX"] = input_row["Authorized Official Name Suffix Text"]
     add_feature(auth_features, name)
 
@@ -657,6 +677,14 @@ def map_auth(input_row, npi_name):
             "Authorized Official Title or Position"
         ]
         auth_data["Provider Name"] = npi_name
+
+    if input_row["Authorized Official Credential Text"]:
+        updateStat(
+            auth_data["DATA_SOURCE"],
+            "CREDENTIAL",
+            input_row["Authorized Official Credential Text"],
+        )
+        auth_data["Credential"] = input_row["Authorized Official Credential Text"]
 
     if input_row["Authorized Official Telephone Number"]:
         updateStat(
@@ -814,6 +842,7 @@ def map_npi(input_row):
         if input_row["Provider Name Prefix Text"]:
             name["NAME_PREFIX"] = input_row["Provider Name Prefix Text"]
         if input_row["Provider Name Suffix Text"]:
+            updateStat(json_data["DATA_SOURCE"], "NAME_SUFFIX: " + input_row["Provider Name Suffix Text"])
             name["NAME_SUFFIX"] = input_row["Provider Name Suffix Text"]
         add_feature(features, name)
     elif entity_type == "2":
@@ -900,6 +929,7 @@ def map_npi(input_row):
         if input_row["Provider Other Name Prefix Text"]:
             other_name["NAME_PREFIX"] = input_row["Provider Other Name Prefix Text"]
         if input_row["Provider Other Name Suffix Text"]:
+            updateStat(json_data["DATA_SOURCE"], "OTHER NAME_SUFFIX: " + input_row["Provider Other Name Suffix Text"])
             other_name["NAME_SUFFIX"] = input_row["Provider Other Name Suffix Text"]
         add_feature(features, other_name)
     else:
@@ -1138,13 +1168,22 @@ def map_npi(input_row):
                 json_data["Taxonomy Code_" + str(looper)] = input_row[
                     "Healthcare Provider Taxonomy Code_" + str(looper)
                 ]
+            taxonomy_desc = TAXONOMY_DESCRIPTIONS.get(input_row["Healthcare Provider Taxonomy Code_" + str(looper)])
+            if taxonomy_desc:
+                json_data["Taxonomy Desc_" + str(looper)] = taxonomy_desc
+            elif TAXONOMY_DESCRIPTIONS:
+                updateStat(
+                    json_data["DATA_SOURCE"],
+                    "TAXONOMY_CODE_NOT_IN_NUCC",
+                    input_row["Healthcare Provider Taxonomy Code_" + str(looper)],
+                )
 
         if (
             input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
             and input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
             not in txnmyGrp_Mapped
         ):
-            txnmyGrp_Mapped["Healthcare Provider Taxonomy Group_" + str(looper)] = True
+            txnmyGrp_Mapped[input_row["Healthcare Provider Taxonomy Group_" + str(looper)]] = True
             # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
             # txnmyGrp.append({"TAXONOMY_GRP": input_row['Healthcare Provider Taxonomy Group_' + str(looper)]})
             json_data["Taxonomy Group_" + str(looper)] = input_row[
@@ -1262,6 +1301,29 @@ def map_npi(input_row):
             input_row["Parent Organization LBN"],
         )
         json_data["Parent Organization LBN"] = input_row["Parent Organization LBN"]
+
+    #  NPI Status -- NPPES publishes no status column; it is implied by the deactivation and
+    #  reactivation dates. Derived from is_deactivated(), the same test that picks NPI_DEACTIVE vs
+    #  NPI-PROVIDERS, so the status a record carries and the source it lands in cannot disagree.
+    if is_deactivated(input_row):
+        npi_status = "DEACTIVATED"
+    elif input_row["NPI Reactivation Date"].strip():
+        npi_status = "REACTIVATED"
+    else:
+        npi_status = "ACTIVE"
+    updateStat(json_data["DATA_SOURCE"], "NPI Status: " + npi_status)
+    json_data["NPI Status"] = npi_status
+
+    for column in ("Provider Credential Text", "Provider Other Credential Text", "Certification Date"):
+        if input_row[column] and input_row[column] != "NONE":
+            updateStat(json_data["DATA_SOURCE"], "UNMAPPED: " + column, input_row[column])
+            json_data[column] = input_row[column]
+
+    #  Code values Y/N/X; X is "Not Answered" and carries no information, so it is not emitted.
+    for column in ("Is Sole Proprietor", "Is Organization Subpart"):
+        if input_row[column] in ("Y", "N"):
+            updateStat(json_data["DATA_SOURCE"], "UNMAPPED: " + column, input_row[column])
+            json_data[column] = input_row[column]
 
     #   Map the Othername reference data if there is any for this NPI
     for other_org_name in other_org_names:
@@ -1465,7 +1527,21 @@ if __name__ == "__main__":
         "loading them in file order serialises the consumer fleet on one lock -- see ShuffleWriter. "
         "Cost is roughly this many records resident per output file.",
     )
+    argParser.add_argument(
+        "-t",
+        "--taxonomyFile",
+        dest="taxonomyFile",
+        default="",
+        help="optional NUCC taxonomy code set csv (nucc_taxonomy_<ver>.csv from nucc.org); when given, "
+        "each Taxonomy Code_n payload gets a matching Taxonomy Desc_n",
+    )
     parms = argParser.parse_args()
+
+    if parms.taxonomyFile:
+        if not os.path.isfile(parms.taxonomyFile):
+            msgOut(1, " Taxonomy file " + parms.taxonomyFile + " does not exist", "E", "", 2, 0)
+        TAXONOMY_DESCRIPTIONS.update(load_taxonomy_descriptions(parms.taxonomyFile))
+        msgOut(0, "        Taxonomy descriptions loaded : " + str(len(TAXONOMY_DESCRIPTIONS)), "I", "", 0, 0)
 
     if (parms.filePeriod and len(parms.filePeriod) > 0) and (
         parms.sourceDir and len(parms.sourceDir) > 0
