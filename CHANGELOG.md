@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `NPI Status` payload attribute: ACTIVE, DEACTIVATED or REACTIVATED. NPPES has no status column
+  (the NPI Registry shows one), so it is derived from the deactivation and reactivation dates via
+  `is_deactivated()`, the same test that routes a record to `NPI_DEACTIVE`.
+- Payload attributes `Provider Credential Text`, `Provider Other Credential Text`,
+  `Certification Date`, `Is Sole Proprietor` and `Is Organization Subpart` (Y/N only; the
+  "Not Answered" code X is omitted), and `Credential` on `NPI-OFFICIALS` records.
+- `-t/--taxonomyFile` takes the NUCC taxonomy code set CSV and adds a `Taxonomy Desc_n` payload
+  attribute for each `Taxonomy Code_n`, built as "Classification, Specialization" to match the NPI
+  Registry (e.g. `1223G0001X` -> "Dentist, General Practice"). Codes missing from the code set are
+  counted in the stats.
+- Name suffix values and `NPI Status` values are counted per value in the `-l` stats.
 - `ShuffleWriter`, a bounded-memory reservoir that shuffles records as they are written, plus
   `-S/--shuffleBuffer` to size it (default 250000 records per output file; 0 writes straight
   through and disables shuffling). NPPES ships sorted by NPI, so the records belonging to one
@@ -85,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields) instead of a cursor ordinal, and output is byte-identical across runs.
 - The temporary `NPPES.db` is created in a temp directory (or `-w/--workDir`), never in the source
   directory.
+- `Taxonomy Group_n` de-duplication now works; it recorded the column name instead of the value,
+  so a repeated group was emitted once per column.
 
 ### Operator notes
 
