@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Secondary practice locations (`pl_pfile`) are carried on the provider: each address as an extra `ADDR_TYPE: SECONDARY` address
+  (deduplicated against the provider's own) and each telephone and fax number as `PHONE_NUMBER` features. Tests in
+  `tests/test_secondary_locations.py`.
 - `ShuffleWriter`, a bounded-memory reservoir that shuffles records as they are written, plus
   `-S/--shuffleBuffer` to size it (default 250000 records per output file; 0 writes straight
   through and disables shuffling). NPPES ships sorted by NPI, so the records belonging to one
@@ -23,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The nameless `NPI-LOCATIONS` records are no longer written by default (their addresses and numbers are on the provider);
+  `--locationRecords` writes them as before.
 - `NPI-AFFILIATIONS` records are now clustered by ER content. `er_record_id()` derives the
   `RECORD_ID` as a sha1 over the record's normalized (strip, collapse whitespace, upper),
   sorted features, EXCLUDING the `REL_*` disclosure features, so two rows that describe the

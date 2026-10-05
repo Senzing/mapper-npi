@@ -59,6 +59,7 @@
 #        - removed all name defaulting on locations, turns ou its not reliable at all
 #
 # ----------------------------------------------------------------------------------------------------
+import re
 import csv
 import hashlib
 import json
@@ -74,6 +75,7 @@ import pandas
 import sqlite3
 import signal
 import random
+
 
 # NPPES placeholder values that appear in name fields and must never be emitted as a name.
 # "<UNAVAIL>" arrives with the undocumented "Provider Other Organization Name Type Code" 6.
@@ -349,10 +351,100 @@ def flush_affiliate_records(out_file):
 # -------------------------------------------------------------
 #  Map Provider Locations Reference file for this NPI
 # -------------------------------------------------------------
-def map_locations(inNPI, inName, inType):
+def address_identity(feature):
+    """Street + ZIP5 of an address feature, upper-cased and stripped to letters and digits; None without a street line.
+
+    Two addresses with the same identity are the same place for the purpose of not repeating an address on a provider.
+    """
+    line1 = re.sub(r"[^0-9A-Z]", "", str(feature.get("ADDR_LINE1", "")).upper())
+    if not line1:
+        return None
+    zip5 = re.sub(r"[^0-9]", "", str(feature.get("ADDR_POSTAL_CODE", "")))[:5]
+    return line1 + "|" + zip5
+
+
+def secondary_addresses(locations, provider_features):
+    """The secondary practice-location addresses to add to the provider: each once, none already on the provider.
+
+    `locations` are the ADDR_TYPE SECONDARY address features map_locations() produced for this NPI, in its deterministic order.
+    """
+    seen = {address_identity(f) for f in provider_features if "ADDR_LINE1" in f}
+    out = []
+    for feature in locations:
+        ident = address_identity(feature)
+        if ident is None or ident in seen:
+            continue
+        seen.add(ident)
+        out.append(feature)
+    return out
+
+
+# Whether to also write the nameless NPI-LOCATIONS records. Off by default: each secondary location's address and phone numbers
+# are carried on the provider itself (map_locations / map_npi), where name+place and category search can see them, and the
+# separate records only added 1.2M nameless entities that no name key can find.
+EMIT_LOCATION_RECORDS = False
+
+
+def write_location_record(inNPI, rsltRecord, hdr1):
+    """Write one nameless NPI-LOCATIONS record (only with --locationRecords)."""
     global NPILocations_row_count
     global JSON_row_count
 
+    loc_data = {}
+    loc_features = []
+    loc_data["DATA_SOURCE"] = "NPI-LOCATIONS"
+    loc_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
+    loc_data["FEATURES"] = loc_features
+    add_feature(loc_features, {"RECORD_TYPE": "ORGANIZATION"})
+    updateStat("DATA_SOURCES", loc_data["DATA_SOURCE"])
+    updateStat(loc_data["DATA_SOURCE"], "ORGANIZATION")
+
+    # No name on purpose: the name of the organization at a secondary location cannot be stated reliably.
+
+    if rsltRecord["ADDR1"]:
+        # ADDR_TYPE BUSINESS is load-bearing here, not decoration: these records carry no name
+        # at all, so the address IS their identity, and BUSINESS is what marks it as a distinct
+        # physical location so two practice locations do not collapse into one entity.
+        updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE1", rsltRecord["ADDR1"])
+        address = {"ADDR_TYPE": "BUSINESS", "ADDR_LINE1": rsltRecord["ADDR1"]}
+        if rsltRecord["ADDR2"] and rsltRecord["ADDR2"] != "NONE":
+            updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"])
+            address["ADDR_LINE2"] = rsltRecord["ADDR2"]
+        address["ADDR_CITY"] = rsltRecord["CITY"]
+        address["ADDR_STATE"] = rsltRecord["STATE"]
+        address["ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
+        address["ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
+        add_feature(loc_features, address)
+
+    if rsltRecord["PH1"]:
+        updateStat(loc_data["DATA_SOURCE"], "PHONE", rsltRecord["PH1"])
+        add_phone(loc_features, rsltRecord["PH1"])
+    if rsltRecord["PH2"]:
+        updateStat(loc_data["DATA_SOURCE"], "FAX", rsltRecord["PH2"])
+        add_phone(loc_features, rsltRecord["PH2"], "FAX")
+
+    # Disclose rel to NPI
+    add_feature(
+        loc_features,
+        {
+            "REL_POINTER_DOMAIN": "NPI",
+            "REL_POINTER_KEY": inNPI,
+            "REL_POINTER_ROLE": "Secondary Location",
+        },
+    )
+
+    Locations_outFile.write(json.dumps(drop_empty_attributes(loc_data)) + "\n")
+    JSON_row_count += 1
+    NPILocations_row_count += 1
+
+
+def map_locations(inNPI, inName, inType):
+    """The secondary practice locations of one NPI, from the pl_pfile, in a deterministic order.
+
+    Returns a list of dicts: "address" (an ADDR_TYPE SECONDARY address feature, or None without a street line) and "phone" /
+    "fax" (the location's numbers, or None). map_npi puts them on the provider; the nameless NPI-LOCATIONS record is written
+    only with --locationRecords.
+    """
     sql = "select distinct "
     sql += ' "Provider Secondary Practice Location Address- Address Line 1"                  as ADDR1,'
     sql += ' "Provider Secondary Practice Location Address-  Address Line 2"                 as ADDR2,'
@@ -369,65 +461,23 @@ def map_locations(inNPI, inName, inType):
     cursor1 = plObj.execute(sql, (str(inNPI),))
     hdr1 = [col[0] for col in plObj.description]
     resultRow = cursor1.fetchone()
+    locations = []
     while resultRow:
         rsltRecord = dict(zip(hdr1, resultRow))
-
-        loc_data = {}
-        loc_features = []
-        loc_data["DATA_SOURCE"] = "NPI-LOCATIONS"
-        loc_data["RECORD_ID"] = derived_record_id(inNPI, *[rsltRecord[col] for col in hdr1])
-        loc_data["FEATURES"] = loc_features
-        add_feature(loc_features, {"RECORD_TYPE": "ORGANIZATION"})
-        updateStat("DATA_SOURCES", loc_data["DATA_SOURCE"])
-        updateStat(loc_data["DATA_SOURCE"], "ORGANIZATION")
-
-        if (
-            False
-        ):  # --cannot reliably say this is the name of the organization at that location
-            if inType == "1":
-                add_feature(loc_features, {"NAME_TYPE": "PRIMARY", "NAME_FULL": inName})
-                updateStat(loc_data["DATA_SOURCE"], "NAME_FULL(PERSON)", inName)
-            else:
-                add_feature(loc_features, {"NAME_TYPE": "PRIMARY", "NAME_ORG": inName})
-                updateStat(loc_data["DATA_SOURCE"], "NAME_ORG(ORGANIZATION)", inName)
-
+        address = None
         if rsltRecord["ADDR1"]:
-            # ADDR_TYPE BUSINESS is load-bearing here, not decoration: these records carry no name
-            # at all, so the address IS their identity, and BUSINESS is what marks it as a distinct
-            # physical location so two practice locations do not collapse into one entity.
-            updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE1", rsltRecord["ADDR1"])
-            address = {"ADDR_TYPE": "BUSINESS", "ADDR_LINE1": rsltRecord["ADDR1"]}
+            address = {"ADDR_TYPE": "SECONDARY", "ADDR_LINE1": rsltRecord["ADDR1"]}
             if rsltRecord["ADDR2"] and rsltRecord["ADDR2"] != "NONE":
-                updateStat(loc_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"])
                 address["ADDR_LINE2"] = rsltRecord["ADDR2"]
             address["ADDR_CITY"] = rsltRecord["CITY"]
             address["ADDR_STATE"] = rsltRecord["STATE"]
             address["ADDR_POSTAL_CODE"] = rsltRecord["POSTAL_CODE"]
             address["ADDR_COUNTRY"] = rsltRecord["COUNTRY"]
-            add_feature(loc_features, address)
-
-        if rsltRecord["PH1"]:
-            updateStat(loc_data["DATA_SOURCE"], "PHONE", rsltRecord["PH1"])
-            add_phone(loc_features, rsltRecord["PH1"])
-        if rsltRecord["PH2"]:
-            updateStat(loc_data["DATA_SOURCE"], "FAX", rsltRecord["PH2"])
-            add_phone(loc_features, rsltRecord["PH2"], "FAX")
-
-        # Disclose rel to NPI
-        add_feature(
-            loc_features,
-            {
-                "REL_POINTER_DOMAIN": "NPI",
-                "REL_POINTER_KEY": inNPI,
-                "REL_POINTER_ROLE": "Secondary Location",
-            },
-        )
-
-        Locations_outFile.write(json.dumps(drop_empty_attributes(loc_data)) + "\n")
-        JSON_row_count += 1
-        NPILocations_row_count += 1
-
+        locations.append({"address": address, "phone": rsltRecord["PH1"] or None, "fax": rsltRecord["PH2"] or None})
+        if EMIT_LOCATION_RECORDS:
+            write_location_record(inNPI, rsltRecord, hdr1)
         resultRow = cursor1.fetchone()
+    return locations
 
 
 #
@@ -1274,7 +1324,17 @@ def map_npi(input_row):
         NPIOfficials_row_count += 1
 
     #   Map the Provider Locations reference data if there are any for this NPI
-    map_locations(input_row["NPI"], npi_name, input_row["Entity Type Code"])
+    #   and carry each secondary location's address on the provider too (ADDR_TYPE SECONDARY, after its own addresses)
+    locations = map_locations(input_row["NPI"], npi_name, input_row["Entity Type Code"])
+    for address in secondary_addresses([loc["address"] for loc in locations if loc["address"]], features):
+        add_feature(features, address)
+        updateStat(json_data["DATA_SOURCE"], "ADDRESS(SECONDARY)", address.get("ADDR_LINE1"))
+    # ...and its telephone and fax numbers (add_phone drops a number the provider already has)
+    for loc in locations:
+        if loc["phone"] and add_phone(features, loc["phone"]):
+            updateStat(json_data["DATA_SOURCE"], "PHONE(SECONDARY)", loc["phone"])
+        if loc["fax"] and add_phone(features, loc["fax"], "FAX"):
+            updateStat(json_data["DATA_SOURCE"], "FAX(SECONDARY)", loc["fax"])
 
     #   Map the Endpoint reference data if there are any for this NPI
     # --jb: some endpoints like email and website belong to the npi, others are affiliates
@@ -1465,7 +1525,15 @@ if __name__ == "__main__":
         "loading them in file order serialises the consumer fleet on one lock -- see ShuffleWriter. "
         "Cost is roughly this many records resident per output file.",
     )
+    argParser.add_argument(
+        "--locationRecords",
+        dest="locationRecords",
+        action="store_true",
+        default=False,
+        help="also write the nameless NPI-LOCATIONS records (default off: secondary locations are carried on the provider)",
+    )
     parms = argParser.parse_args()
+    EMIT_LOCATION_RECORDS = parms.locationRecords
 
     if (parms.filePeriod and len(parms.filePeriod) > 0) and (
         parms.sourceDir and len(parms.sourceDir) > 0
