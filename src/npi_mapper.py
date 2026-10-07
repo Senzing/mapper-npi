@@ -366,7 +366,8 @@ def address_identity(feature):
 def secondary_addresses(locations, provider_features):
     """The secondary practice-location addresses to add to the provider: each once, none already on the provider.
 
-    `locations` are the ADDR_TYPE SECONDARY address features map_locations() produced for this NPI, in its deterministic order.
+    `locations` are the ADDR_TYPE SECONDARY address features map_locations() produced for this NPI, in its
+    deterministic order.
     """
     seen = {address_identity(f) for f in provider_features if "ADDR_LINE1" in f}
     out = []
@@ -379,9 +380,9 @@ def secondary_addresses(locations, provider_features):
     return out
 
 
-# Whether to also write the nameless NPI-LOCATIONS records. Off by default: each secondary location's address and phone numbers
-# are carried on the provider itself (map_locations / map_npi), where name+place and category search can see them, and the
-# separate records only added 1.2M nameless entities that no name key can find.
+# Whether to also write the nameless NPI-LOCATIONS records. Off by default: each secondary location's address
+# and phone numbers are carried on the provider itself (map_locations / map_npi), where name+place and category
+# search can see them, and the separate records only added 1.2M nameless entities that no name key can find.
 EMIT_LOCATION_RECORDS = False
 
 
@@ -441,9 +442,9 @@ def write_location_record(inNPI, rsltRecord, hdr1):
 def map_locations(inNPI, inName, inType):
     """The secondary practice locations of one NPI, from the pl_pfile, in a deterministic order.
 
-    Returns a list of dicts: "address" (an ADDR_TYPE SECONDARY address feature, or None without a street line) and "phone" /
-    "fax" (the location's numbers, or None). map_npi puts them on the provider; the nameless NPI-LOCATIONS record is written
-    only with --locationRecords.
+    Returns a list of dicts: "address" (an ADDR_TYPE SECONDARY address feature, or None without a street
+    line) and "phone" / "fax" (the location's numbers, or None). map_npi puts them on the provider; the
+    nameless NPI-LOCATIONS record is written only with --locationRecords.
     """
     sql = "select distinct "
     sql += ' "Provider Secondary Practice Location Address- Address Line 1"                  as ADDR1,'
@@ -1530,7 +1531,10 @@ if __name__ == "__main__":
         dest="locationRecords",
         action="store_true",
         default=False,
-        help="also write the nameless NPI-LOCATIONS records (default off: secondary locations are carried on the provider)",
+        help=(
+            "also write the nameless NPI-LOCATIONS records "
+            "(default off: secondary locations are carried on the provider)"
+        ),
     )
     parms = argParser.parse_args()
     EMIT_LOCATION_RECORDS = parms.locationRecords
