@@ -61,6 +61,13 @@ Place the following files on a directory of your choice ...
 - [npi_mapper.py]
 - [npi_config_updates.g2c]
 
+### Secondary practice locations
+
+The secondary practice locations (`pl_pfile`) are carried on the provider itself: each location's address as an extra
+`ADDR_TYPE: SECONDARY` address (once, and not when it repeats an address the provider already has) and its telephone and fax
+numbers as `PHONE_NUMBER` features (a fax keeps `PHONE_TYPE: FAX`). The nameless `NPI-LOCATIONS` records are no longer written;
+`--locationRecords` writes them as well.
+
 ### Configuring Senzing
 
 _Note:_ This only needs to be performed one time! In fact you may want to add these configuration updates to a master configuration file for all your data sources.
