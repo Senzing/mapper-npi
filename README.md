@@ -14,7 +14,7 @@ Usage:
 ```console
 python3 src/npi_mapper.py --help
 usage: npi_mapper.py [-h] -i SOURCEDIR -f FILEPERIOD -o OUTPUTFILEPATH [-l LOGFILENAME]
-                     [-w WORKDIR] [-S SHUFFLEBUFFER]
+                     [-w WORKDIR] [-S SHUFFLEBUFFER] [-t TAXONOMYFILE]
 
 options:
   -h, --help            show this help message and exit
@@ -37,6 +37,9 @@ options:
                         records are adjacent and loading them in file order serialises the
                         consumer fleet on one lock -- see ShuffleWriter. Cost is roughly this many
                         records resident per output file.
+  -t TAXONOMYFILE, --taxonomyFile TAXONOMYFILE
+                        optional NUCC taxonomy code set csv (nucc_taxonomy_<ver>.csv from nucc.org);
+                        when given, each Taxonomy Code_n payload gets a matching Taxonomy Desc_n
 ```
 
 ## Contents
@@ -69,6 +72,13 @@ From your Senzing project directory:
 
 ```console
 python3 G2ConfigTool.py <path-to-file>/npi_config_updates.g2c
+```
+
+On Senzing v4, use `sz_configtool` with `-f`. Without it, reading from a file stops at the first
+confirmation prompt and only the first command is applied:
+
+```console
+sz_configtool -f <path-to-file>/npi_config_updates.g2c
 ```
 
 This will step you through the process of adding the data sources, features, attributes and any other settings needed to load this watch list data into
@@ -121,6 +131,28 @@ or to create one file with all the records, specify the path and file name in th
 python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output/npi-yyyy-mm-dd.json
 ```
 
+To add taxonomy descriptions, download the current CSV from the
+[NUCC taxonomy code set] page and pass it with -t:
+
+```console
+python3 src/npi_mapper.py -i ./NPPES_Data_Dissemination_November_2020/ -f 20050523-20201108 -o ./output -t ./nucc_taxonomy_261.csv
+```
+
+#### Payload attributes
+
+Besides the features used for resolution, provider records carry these payload attributes when populated:
+
+- `NPI Status` - ACTIVE, DEACTIVATED or REACTIVATED. NPPES has no status column, so it is computed from
+  the deactivation and reactivation dates, using the same test that routes a record to `NPI_DEACTIVE`.
+- `Provider Enumeration Date`, `Last Update Date`, `Certification Date`
+- `NPI Deactivation Reason Code`, `NPI Deactivation Date`, `NPI Reactivation Date`
+- `Provider Credential Text`, `Provider Other Credential Text`
+- `Is Sole Proprietor`, `Is Organization Subpart` (Y or N; "not answered" is omitted)
+- `Parent Organization LBN`
+- `Taxonomy Code_n` (marked "(primary)"), `Taxonomy Desc_n` (with -t), `Taxonomy Group_n`
+
+Authorized official records carry `Title or Position`, `Provider Name` and `Credential`.
+
 Finally, specifying the -l logFileName writes out the stats and examples of what gets mapped into Senzing. It can be quite useful
 during development and debugging of mapping issues.
 
@@ -164,5 +196,6 @@ While not required, look for the following identifiers in your other data sets:
 [Mapping other data sources]: #mapping-other-data-sources
 [npi_config_updates.g2c]: src/npi_config_updates.g2c
 [npi_mapper.py]: src/npi_mapper.py
+[NUCC taxonomy code set]: https://www.nucc.org/index.php/code-sets-mainmenu-41/provider-taxonomy-mainmenu-40/csv-mainmenu-57
 [Prerequisites]: #prerequisites
 [Running the mapper]: #running-the-mapper
