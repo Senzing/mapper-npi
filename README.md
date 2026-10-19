@@ -50,7 +50,7 @@ options:
 
 ### Prerequisites
 
-- python 3.10 or higher (the `--help` text above is what argparse prints on 3.10+; CI runs 3.10-3.13)
+- python 3.11 or higher (the `--help` text above is what argparse prints on 3.10+; CI runs 3.11-3.13)
 - Senzing API version 2.1 or higher
 - pandas (pip3 install pandas)
 
