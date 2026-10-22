@@ -2,7 +2,7 @@ bandit==1.9.4
 black==26.5.1
 build==1.6.1
 coverage==7.16.2
-cryptography==50.0.1
+cryptography==50.0.2
 flake8==7.4.1
 fpvs==0.3.0
 isort==9.0.2
