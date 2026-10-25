@@ -59,23 +59,23 @@
 #        - removed all name defaulting on locations, turns ou its not reliable at all
 #
 # ----------------------------------------------------------------------------------------------------
-import re
-import csv
-import hashlib
-import json
 import argparse
 import atexit
+import csv
 import datetime
-import time
+import hashlib
+import json
 import os
+import random
+import re
 import shutil
+import signal
+import sqlite3
 import sys
 import tempfile
-import pandas
-import sqlite3
-import signal
-import random
+import time
 
+import pandas
 
 # NPPES placeholder values that appear in name fields and must never be emitted as a name.
 # "<UNAVAIL>" arrives with the undocumented "Provider Other Organization Name Type Code" 6.
@@ -144,9 +144,7 @@ def is_deactivated(input_row):
     NPI_DEACTIVE output file, so the source a record claims and the file it lands in cannot drift.
     See the comment in map_npi for the measured population and why these get their own source.
     """
-    return bool(input_row["NPI Deactivation Date"].strip()) and not bool(
-        input_row["NPI Reactivation Date"].strip()
-    )
+    return bool(input_row["NPI Deactivation Date"].strip()) and not bool(input_row["NPI Reactivation Date"].strip())
 
 
 # Elements that only LABEL a feature instance (its usage type). An object holding nothing but a
@@ -310,11 +308,7 @@ def er_record_id(features):
         if any(k.startswith("REL_") for k in feature):
             continue
         canonical.append(
-            sorted(
-                (k, " ".join(str(v).split()).upper())
-                for k, v in feature.items()
-                if v not in (None, "")
-            )
+            sorted((k, " ".join(str(v).split()).upper()) for k, v in feature.items() if v not in (None, ""))
         )
     canonical.sort()
     key = json.dumps(canonical, ensure_ascii=False)
@@ -489,9 +483,7 @@ def map_endpoints(inNPI):
     # No globals: this function only accumulates into affiliate_records; the counters are
     # advanced by flush_affiliate_records() when the records are actually written.
 
-    endpointList = (
-        []
-    )  # --jb: for emails and websites that belong to the NPI, not affiliates
+    endpointList = []  # --jb: for emails and websites that belong to the NPI, not affiliates
 
     sql = "select distinct "
     sql += ' "Affiliation"                      as IS_AFFILIATE,'  # --jb: added
@@ -540,9 +532,7 @@ def map_endpoints(inNPI):
                 updateStat(ep_data["DATA_SOURCE"], "ADDR_LINE1", rsltRecord["ADDR1"])
                 address = {"ADDR_TYPE": "BUSINESS", "ADDR_LINE1": rsltRecord["ADDR1"]}
                 if rsltRecord["ADDR2"] and rsltRecord["ADDR2"] != "NONE":
-                    updateStat(
-                        ep_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"]
-                    )
+                    updateStat(ep_data["DATA_SOURCE"], "ADDR_LINE2", rsltRecord["ADDR2"])
                     address["ADDR_LINE2"] = rsltRecord["ADDR2"]
                 address["ADDR_CITY"] = rsltRecord["CITY"]
                 address["ADDR_STATE"] = rsltRecord["STATE"]
@@ -580,9 +570,7 @@ def map_endpoints(inNPI):
             else:
                 updateStat(logDataSource, "WEBSITE_ADDRESS", rsltRecord["ENDPOINT"])
                 if rsltRecord["IS_AFFILIATE"] == "Y":
-                    add_feature(
-                        ep_features, {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]}
-                    )
+                    add_feature(ep_features, {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]})
                 else:
                     ep_feature = {"WEBSITE_ADDRESS": rsltRecord["ENDPOINT"]}
                     if ep_feature not in endpointList:
@@ -602,9 +590,7 @@ def map_endpoints(inNPI):
                 resultRow = cursor1.fetchone()
                 continue
             record_id = er_record_id(er_features)
-            entry = affiliate_records.setdefault(
-                record_id, {"features": er_features, "pointers": set()}
-            )
+            entry = affiliate_records.setdefault(record_id, {"features": er_features, "pointers": set()})
             entry["pointers"].add(str(inNPI))
 
         resultRow = cursor1.fetchone()
@@ -635,10 +621,7 @@ def map_othernames(inNPI):
         # The type code may come back from sqlite as int or str depending on column affinity;
         # compare as a stripped string so the branches below match either way.
         typCd = "" if rsltRecord["typCd"] is None else str(rsltRecord["typCd"]).strip()
-        if (
-            not is_placeholder_name(rsltRecord["name1"])
-            and rsltRecord["name1"] not in oNames_Mapped
-        ):
+        if not is_placeholder_name(rsltRecord["name1"]) and rsltRecord["name1"] not in oNames_Mapped:
             oNames_Mapped[rsltRecord["name1"]] = True
             if typCd == "3":  # DBA
                 updateStat("NPI-PROVIDERS", "NAME-DBA", rsltRecord["name1"])
@@ -687,10 +670,7 @@ def map_auth(input_row, npi_name):
         "NAME_LAST": input_row["Authorized Official Last Name"],
         "NAME_FIRST": input_row["Authorized Official First Name"],
     }
-    if (
-        input_row["Authorized Official Middle Name"]
-        and input_row["Authorized Official Middle Name"] != "NONE"
-    ):
+    if input_row["Authorized Official Middle Name"] and input_row["Authorized Official Middle Name"] != "NONE":
         name["NAME_MIDDLE"] = input_row["Authorized Official Middle Name"]
     if input_row["Authorized Official Name Prefix Text"]:
         name["NAME_PREFIX"] = input_row["Authorized Official Name Prefix Text"]
@@ -704,9 +684,7 @@ def map_auth(input_row, npi_name):
             "TITLE",
             input_row["Authorized Official Title or Position"],
         )
-        auth_data["Title or Position"] = input_row[
-            "Authorized Official Title or Position"
-        ]
+        auth_data["Title or Position"] = input_row["Authorized Official Title or Position"]
         auth_data["Provider Name"] = npi_name
 
     if input_row["Authorized Official Telephone Number"]:
@@ -742,7 +720,6 @@ def map_npi(input_row):
     json_data = {}
     features = []
 
-
     # --required attributes
     #
     # A CURRENTLY-DEACTIVATED NPI IS ITS OWN DATA SOURCE. Definition is exact, not a
@@ -762,9 +739,7 @@ def map_npi(input_row):
     # dropped or buried among 9.4M active providers. The record stays deliberately lean: it keeps
     # NPI_NUMBER, REF_NPI_ID and REL_ANCHOR so it can still be matched and pointed at, and it gets
     # NO RECORD_TYPE (the type is genuinely unknowable -- see below) and no address usage type.
-    json_data["DATA_SOURCE"] = (
-        "NPI_DEACTIVE" if is_deactivated(input_row) else "NPI-PROVIDERS"
-    )
+    json_data["DATA_SOURCE"] = "NPI_DEACTIVE" if is_deactivated(input_row) else "NPI-PROVIDERS"
     json_data["RECORD_ID"] = input_row["NPI"]
     json_data["FEATURES"] = features
     # Entity Type Code 1 = individual, 2 = organization. Deactivated NPIs are disseminated with the
@@ -856,10 +831,7 @@ def map_npi(input_row):
         npi_name = input_row["Provider Last Name (Legal Name)"]
         npi_name = npi_name + ", " + input_row["Provider First Name"]
         updateStat(json_data["DATA_SOURCE"], "NAME_LAST/FIRST-PRIMARY", npi_name)
-        if (
-            input_row["Provider Middle Name"]
-            and input_row["Provider Middle Name"] != "NONE"
-        ):
+        if input_row["Provider Middle Name"] and input_row["Provider Middle Name"] != "NONE":
             name["NAME_MIDDLE"] = input_row["Provider Middle Name"]
             npi_name = npi_name + " " + input_row["Provider Middle Name"]
         if input_row["Provider Name Prefix Text"]:
@@ -886,9 +858,7 @@ def map_npi(input_row):
                 "NAME_ORG-DBA",
                 input_row["Provider Other Organization Name"],
             )
-        elif (
-            input_row["Provider Other Organization Name Type Code"] == "4"
-        ):  # Former Bus name
+        elif input_row["Provider Other Organization Name Type Code"] == "4":  # Former Bus name
             add_feature(
                 features,
                 {
@@ -928,9 +898,7 @@ def map_npi(input_row):
     if is_placeholder_name(input_row["Provider Other Middle Name"]):
         input_row["Provider Other Middle Name"] = ""
 
-    other_name_type = OTHER_LAST_NAME_TYPE_CODES.get(
-        input_row["Provider Other Last Name Type Code"]
-    )
+    other_name_type = OTHER_LAST_NAME_TYPE_CODES.get(input_row["Provider Other Last Name Type Code"])
     if other_name_type and input_row["Provider Other Last Name"]:
         updateStat(
             json_data["DATA_SOURCE"],
@@ -984,19 +952,11 @@ def map_npi(input_row):
                 "ADDR_LINE2-MAILING",
                 input_row["Provider Second Line Business Mailing Address"],
             )
-            mailing["ADDR_LINE2"] = input_row[
-                "Provider Second Line Business Mailing Address"
-            ]
+            mailing["ADDR_LINE2"] = input_row["Provider Second Line Business Mailing Address"]
         mailing["ADDR_CITY"] = input_row["Provider Business Mailing Address City Name"]
-        mailing["ADDR_STATE"] = input_row[
-            "Provider Business Mailing Address State Name"
-        ]
-        mailing["ADDR_POSTAL_CODE"] = input_row[
-            "Provider Business Mailing Address Postal Code"
-        ]
-        mailing["ADDR_COUNTRY"] = input_row[
-            "Provider Business Mailing Address Country Code (If outside U.S.)"
-        ]
+        mailing["ADDR_STATE"] = input_row["Provider Business Mailing Address State Name"]
+        mailing["ADDR_POSTAL_CODE"] = input_row["Provider Business Mailing Address Postal Code"]
+        mailing["ADDR_COUNTRY"] = input_row["Provider Business Mailing Address Country Code (If outside U.S.)"]
         add_feature(features, mailing)
 
     if input_row["Provider First Line Business Practice Location Address"]:
@@ -1032,32 +992,21 @@ def map_npi(input_row):
         )
         practice = {
             "ADDR_TYPE": address_label,
-            "ADDR_LINE1": input_row[
-                "Provider First Line Business Practice Location Address"
-            ],
+            "ADDR_LINE1": input_row["Provider First Line Business Practice Location Address"],
         }
         if (
             input_row["Provider Second Line Business Practice Location Address"]
-            and input_row["Provider Second Line Business Practice Location Address"]
-            != "NONE"
+            and input_row["Provider Second Line Business Practice Location Address"] != "NONE"
         ):
             updateStat(
                 json_data["DATA_SOURCE"],
                 "ADDR_LINE2-" + address_label,
                 input_row["Provider Second Line Business Practice Location Address"],
             )
-            practice["ADDR_LINE2"] = input_row[
-                "Provider Second Line Business Practice Location Address"
-            ]
-        practice["ADDR_CITY"] = input_row[
-            "Provider Business Practice Location Address City Name"
-        ]
-        practice["ADDR_STATE"] = input_row[
-            "Provider Business Practice Location Address State Name"
-        ]
-        practice["ADDR_POSTAL_CODE"] = input_row[
-            "Provider Business Practice Location Address Postal Code"
-        ]
+            practice["ADDR_LINE2"] = input_row["Provider Second Line Business Practice Location Address"]
+        practice["ADDR_CITY"] = input_row["Provider Business Practice Location Address City Name"]
+        practice["ADDR_STATE"] = input_row["Provider Business Practice Location Address State Name"]
+        practice["ADDR_POSTAL_CODE"] = input_row["Provider Business Practice Location Address Postal Code"]
         practice["ADDR_COUNTRY"] = input_row[
             "Provider Business Practice Location Address Country Code (If outside U.S.)"
         ]
@@ -1075,18 +1024,14 @@ def map_npi(input_row):
             "PHONE-MAILING-LOCATION",
             input_row["Provider Business Mailing Address Telephone Number"],
         )
-        add_phone(
-            features, input_row["Provider Business Mailing Address Telephone Number"]
-        )
+        add_phone(features, input_row["Provider Business Mailing Address Telephone Number"])
     if input_row["Provider Business Mailing Address Fax Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
             "PHONE-MAILING-FAX",
             input_row["Provider Business Mailing Address Fax Number"],
         )
-        add_phone(
-            features, input_row["Provider Business Mailing Address Fax Number"], "FAX"
-        )
+        add_phone(features, input_row["Provider Business Mailing Address Fax Number"], "FAX")
     if input_row["Provider Business Practice Location Address Telephone Number"]:
         updateStat(
             json_data["DATA_SOURCE"],
@@ -1150,38 +1095,27 @@ def map_npi(input_row):
                 add_feature(
                     features,
                     {
-                        "PROVIDER_LICENSE_NUMBER": input_row[
-                            "Provider License Number_" + str(looper)
-                        ],
-                        "PROVIDER_LICENSE_STATE": input_row[
-                            "Provider License Number State Code_" + str(looper)
-                        ],
+                        "PROVIDER_LICENSE_NUMBER": input_row["Provider License Number_" + str(looper)],
+                        "PROVIDER_LICENSE_STATE": input_row["Provider License Number State Code_" + str(looper)],
                     },
                 )
 
         # --payload-- attributes (Taxonomy Codes & Groups)
         if (
             input_row["Healthcare Provider Taxonomy Code_" + str(looper)]
-            and input_row["Healthcare Provider Taxonomy Code_" + str(looper)]
-            not in pTaxyCds_Mapped
+            and input_row["Healthcare Provider Taxonomy Code_" + str(looper)] not in pTaxyCds_Mapped
         ):
-            pTaxyCds_Mapped[
-                input_row["Healthcare Provider Taxonomy Code_" + str(looper)]
-            ] = True
+            pTaxyCds_Mapped[input_row["Healthcare Provider Taxonomy Code_" + str(looper)]] = True
             updateStat(
                 json_data["DATA_SOURCE"],
                 "TAXONOMY_CODE",
                 input_row["Healthcare Provider Taxonomy Code_" + str(looper)],
             )
-            if (
-                input_row["Healthcare Provider Primary Taxonomy Switch_" + str(looper)]
-                == "Y"
-            ):
+            if input_row["Healthcare Provider Primary Taxonomy Switch_" + str(looper)] == "Y":
                 # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
                 # pTaxyCds.append({"PROVIDER_TAXONOMY_CD": input_row['Healthcare Provider Taxonomy Code_' + str(looper)] + '  (PRI)'})
                 json_data["Taxonomy Code_" + str(looper)] = (
-                    input_row["Healthcare Provider Taxonomy Code_" + str(looper)]
-                    + " (primary)"
+                    input_row["Healthcare Provider Taxonomy Code_" + str(looper)] + " (primary)"
                 )
             else:
                 # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
@@ -1192,15 +1126,12 @@ def map_npi(input_row):
 
         if (
             input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
-            and input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
-            not in txnmyGrp_Mapped
+            and input_row["Healthcare Provider Taxonomy Group_" + str(looper)] not in txnmyGrp_Mapped
         ):
             txnmyGrp_Mapped["Healthcare Provider Taxonomy Group_" + str(looper)] = True
             # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
             # txnmyGrp.append({"TAXONOMY_GRP": input_row['Healthcare Provider Taxonomy Group_' + str(looper)]})
-            json_data["Taxonomy Group_" + str(looper)] = input_row[
-                "Healthcare Provider Taxonomy Group_" + str(looper)
-            ]
+            json_data["Taxonomy Group_" + str(looper)] = input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
             updateStat(
                 json_data["DATA_SOURCE"],
                 "TAXONOMY_GROUP",
@@ -1234,31 +1165,21 @@ def map_npi(input_row):
 
                 #  ONE feature for every provider identifier; the NPPES type code (or the
                 #  reported issuer) becomes the ISSUER element, which PROVIDER_ID compares.
-                tcode = input_row[
-                    "Other Provider Identifier Type Code_" + str(looper)
-                ]
+                tcode = input_row["Other Provider Identifier Type Code_" + str(looper)]
                 updateStat(
                     "PROVIDER_ID-"
-                    + OTHER_PROVIDER_TYPE_CODES.get(
-                        (tcode or "").strip(), "TYPE_" + (tcode or "").strip()
-                    ),
+                    + OTHER_PROVIDER_TYPE_CODES.get((tcode or "").strip(), "TYPE_" + (tcode or "").strip()),
                     input_row["Other Provider Identifier State_" + str(looper)],
                     input_row["Other Provider Identifier_" + str(looper)],
                 )
                 add_feature(
                     features,
                     {
-                        "PROVIDER_ID_NUMBER": input_row[
-                            "Other Provider Identifier_" + str(looper)
-                        ],
-                        "PROVIDER_ID_STATE": input_row[
-                            "Other Provider Identifier State_" + str(looper)
-                        ],
+                        "PROVIDER_ID_NUMBER": input_row["Other Provider Identifier_" + str(looper)],
+                        "PROVIDER_ID_STATE": input_row["Other Provider Identifier State_" + str(looper)],
                         "PROVIDER_ID_ISSUER": provider_id_issuer(
                             tcode,
-                            input_row[
-                                "Other Provider Identifier Issuer_" + str(looper)
-                            ],
+                            input_row["Other Provider Identifier Issuer_" + str(looper)],
                         ),
                     },
                 )
@@ -1286,9 +1207,7 @@ def map_npi(input_row):
             "UNMAPPED: NPI Deactivation Reason Code",
             input_row["NPI Deactivation Reason Code"],
         )
-        json_data["NPI Deactivation Reason Code"] = input_row[
-            "NPI Deactivation Reason Code"
-        ]
+        json_data["NPI Deactivation Reason Code"] = input_row["NPI Deactivation Reason Code"]
     if input_row["NPI Deactivation Date"]:
         updateStat(
             json_data["DATA_SOURCE"],
@@ -1303,10 +1222,7 @@ def map_npi(input_row):
             input_row["NPI Reactivation Date"],
         )
         json_data["NPI Reactivation Date"] = input_row["NPI Reactivation Date"]
-    if (
-        input_row["Parent Organization LBN"]
-        and input_row["Parent Organization LBN"] != "NONE"
-    ):
+    if input_row["Parent Organization LBN"] and input_row["Parent Organization LBN"] != "NONE":
         updateStat(
             json_data["DATA_SOURCE"],
             "UNMAPPED: Parent Organization LBN",
@@ -1350,9 +1266,7 @@ def map_npi(input_row):
 # -------------------------------------------------------------
 def loadDB(inFileSpec, inTabName):
 
-    msgOut(
-        0, "  Populating " + inTabName + " DB Table from reference file ", "I", "", 0, 0
-    )
+    msgOut(0, "  Populating " + inTabName + " DB Table from reference file ", "I", "", 0, 0)
     # dtype=str keeps every column TEXT in sqlite: pandas otherwise infers int64/float64 for
     # postal codes, phone/fax numbers and type codes, which drops leading zeros ("061051719" ->
     # 61051719), renders faxes as floats (8607148439.0) and breaks string comparisons on codes.
@@ -1400,23 +1314,13 @@ def msgOut(eDie, eMsg, eType, eRow, eCode, eRowNum):
 
     if eDie == 1:
         print("{:%H:%M:%S}".format(datetime.datetime.now()) + eMsg + str(eCode))
-        print(
-            "{:%H:%M:%S}".format(datetime.datetime.now())
-            + "  *****  ABORTING RUN ******"
-        )
+        print("{:%H:%M:%S}".format(datetime.datetime.now()) + "  *****  ABORTING RUN ******")
         sys.exit(eCode)
     else:
         if eType == "E":
-            print(
-                "{:%H:%M:%S}".format(datetime.datetime.now()) + "  *** ERROR - " + eMsg
-            )
+            print("{:%H:%M:%S}".format(datetime.datetime.now()) + "  *** ERROR - " + eMsg)
         elif eType == "W":
-            print(
-                "{:%H:%M:%S}".format(datetime.datetime.now())
-                + "  ... Warning ->"
-                + eMsg
-                + msg2
-            )
+            print("{:%H:%M:%S}".format(datetime.datetime.now()) + "  ... Warning ->" + eMsg + msg2)
         else:
             print("{:%H:%M:%S} ".format(datetime.datetime.now()) + eMsg)
 
@@ -1539,17 +1443,11 @@ if __name__ == "__main__":
     parms = argParser.parse_args()
     EMIT_LOCATION_RECORDS = parms.locationRecords
 
-    if (parms.filePeriod and len(parms.filePeriod) > 0) and (
-        parms.sourceDir and len(parms.sourceDir) > 0
-    ):
+    if (parms.filePeriod and len(parms.filePeriod) > 0) and (parms.sourceDir and len(parms.sourceDir) > 0):
         #    Define all the file names
-        parms.sourceDir = parms.sourceDir + (
-            os.path.sep if parms.sourceDir[-1:] != os.path.sep else ""
-        )
+        parms.sourceDir = parms.sourceDir + (os.path.sep if parms.sourceDir[-1:] != os.path.sep else "")
         npiDataFileSpec = parms.sourceDir + "npidata_pfile_" + parms.filePeriod + ".csv"
-        onDataFileSpec = (
-            parms.sourceDir + "othername_pfile_" + parms.filePeriod + ".csv"
-        )
+        onDataFileSpec = parms.sourceDir + "othername_pfile_" + parms.filePeriod + ".csv"
         plDataFileSpec = parms.sourceDir + "pl_pfile_" + parms.filePeriod + ".csv"
         epDataFileSpec = parms.sourceDir + "endpoint_pfile_" + parms.filePeriod + ".csv"
 
@@ -1572,9 +1470,7 @@ if __name__ == "__main__":
             abortRun = 1
             msgOut(
                 0,
-                " NPI Main data Input File Name  : "
-                + npiDataFileSpec
-                + "   <-  is not a file or does not exist",
+                " NPI Main data Input File Name  : " + npiDataFileSpec + "   <-  is not a file or does not exist",
                 "E",
                 "",
                 2,
@@ -1605,8 +1501,7 @@ if __name__ == "__main__":
         if os.path.isfile(plDataFileSpec):
             msgOut(
                 0,
-                "        Practice Location reference data Input File Name : "
-                + plDataFileSpec,
+                "        Practice Location reference data Input File Name : " + plDataFileSpec,
                 "I",
                 "",
                 0,
@@ -1652,9 +1547,7 @@ if __name__ == "__main__":
         outputFilePath = os.path.abspath(parms.outputFilePath)
         if os.path.isdir(outputFilePath):
             outputOneFile = False
-            msgOut(
-                0, "        Output File Directory : " + outputFilePath, "I", "", 0, 0
-            )
+            msgOut(0, "        Output File Directory : " + outputFilePath, "I", "", 0, 0)
         else:
             outputOneFile = True
             msgOut(0, "        Output File Name : " + outputFilePath, "I", "", 0, 0)
@@ -1664,32 +1557,19 @@ if __name__ == "__main__":
 
         #    Creating Output File names
         if not outputOneFile:
-            outputFilePath = outputFilePath + (
-                os.path.sep if outputFilePath[-1:] != os.path.sep else ""
-            )
-            Providers_outputFileSpec = (
-                outputFilePath + "NPI_PROVIDERS_" + parms.filePeriod + ".json"
-            )
-            Officials_outputFileSpec = (
-                outputFilePath + "NPI_OFFICIALS_" + parms.filePeriod + ".json"
-            )
-            Affiliations_outputFileSpec = (
-                outputFilePath + "NPI_AFFILIATIONS_" + parms.filePeriod + ".json"
-            )
-            Locations_outputFileSpec = (
-                outputFilePath + "NPI_LOCATIONS_" + parms.filePeriod + ".json"
-            )
-            Deactivated_outputFileSpec = (
-                outputFilePath + "NPI_DEACTIVE_" + parms.filePeriod + ".json"
-            )
+            outputFilePath = outputFilePath + (os.path.sep if outputFilePath[-1:] != os.path.sep else "")
+            Providers_outputFileSpec = outputFilePath + "NPI_PROVIDERS_" + parms.filePeriod + ".json"
+            Officials_outputFileSpec = outputFilePath + "NPI_OFFICIALS_" + parms.filePeriod + ".json"
+            Affiliations_outputFileSpec = outputFilePath + "NPI_AFFILIATIONS_" + parms.filePeriod + ".json"
+            Locations_outputFileSpec = outputFilePath + "NPI_LOCATIONS_" + parms.filePeriod + ".json"
+            Deactivated_outputFileSpec = outputFilePath + "NPI_DEACTIVE_" + parms.filePeriod + ".json"
 
             #    Checking for existence of output files.  Delete if they exist.
 
             if not os.path.isfile(Providers_outputFileSpec):
                 msgOut(
                     0,
-                    "        NPI-PROVIDERS will be written to  : "
-                    + Providers_outputFileSpec,
+                    "        NPI-PROVIDERS will be written to  : " + Providers_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1698,8 +1578,7 @@ if __name__ == "__main__":
             else:
                 msgOut(
                     0,
-                    "        NPI-PROVIDERS output file exists and will be replaced  : "
-                    + Providers_outputFileSpec,
+                    "        NPI-PROVIDERS output file exists and will be replaced  : " + Providers_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1710,8 +1589,7 @@ if __name__ == "__main__":
             if not os.path.isfile(Officials_outputFileSpec):
                 msgOut(
                     0,
-                    "        NPI-OFFICIALS will be written to  : "
-                    + Officials_outputFileSpec,
+                    "        NPI-OFFICIALS will be written to  : " + Officials_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1720,8 +1598,7 @@ if __name__ == "__main__":
             else:
                 msgOut(
                     0,
-                    "        NPI-OFFICIALS output file exists and will be replaced  : "
-                    + Officials_outputFileSpec,
+                    "        NPI-OFFICIALS output file exists and will be replaced  : " + Officials_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1732,8 +1609,7 @@ if __name__ == "__main__":
             if not os.path.isfile(Affiliations_outputFileSpec):
                 msgOut(
                     0,
-                    "        NPI-AFFILIATIONS will be written to  : "
-                    + Affiliations_outputFileSpec,
+                    "        NPI-AFFILIATIONS will be written to  : " + Affiliations_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1754,8 +1630,7 @@ if __name__ == "__main__":
             if not os.path.isfile(Locations_outputFileSpec):
                 msgOut(
                     0,
-                    "        NPI-LOCATIONS will be written to  : "
-                    + Locations_outputFileSpec,
+                    "        NPI-LOCATIONS will be written to  : " + Locations_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1764,8 +1639,7 @@ if __name__ == "__main__":
             else:
                 msgOut(
                     0,
-                    "        NPI-LOCATIONS output file exists and will be replaced  : "
-                    + Locations_outputFileSpec,
+                    "        NPI-LOCATIONS output file exists and will be replaced  : " + Locations_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1776,8 +1650,7 @@ if __name__ == "__main__":
             if not os.path.isfile(Deactivated_outputFileSpec):
                 msgOut(
                     0,
-                    "        NPI_DEACTIVE will be written to  : "
-                    + Deactivated_outputFileSpec,
+                    "        NPI_DEACTIVE will be written to  : " + Deactivated_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1786,8 +1659,7 @@ if __name__ == "__main__":
             else:
                 msgOut(
                     0,
-                    "        NPI_DEACTIVE output file exists and will be replaced  : "
-                    + Deactivated_outputFileSpec,
+                    "        NPI_DEACTIVE output file exists and will be replaced  : " + Deactivated_outputFileSpec,
                     "I",
                     "",
                     0,
@@ -1807,9 +1679,13 @@ if __name__ == "__main__":
     else:
         Providers_outFile = ShuffleWriter(open(Providers_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
         Officials_outFile = ShuffleWriter(open(Officials_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
-        Affiliations_outFile = ShuffleWriter(open(Affiliations_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Affiliations_outFile = ShuffleWriter(
+            open(Affiliations_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer
+        )
         Locations_outFile = ShuffleWriter(open(Locations_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
-        Deactivated_outFile = ShuffleWriter(open(Deactivated_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer)
+        Deactivated_outFile = ShuffleWriter(
+            open(Deactivated_outputFileSpec, "w", encoding="utf-8"), parms.shuffleBuffer
+        )
 
     NPIinput_row_count = 0
     NPIProvider_row_count = 0
@@ -1850,9 +1726,7 @@ if __name__ == "__main__":
     dbname = os.path.join(workDir, "NPPES.db")
     dbExists = os.path.exists(dbname)
     if dbExists:  # --purge and reload
-        msgOut(
-            0, "  Purging existing temp DB for reference data :" + dbname, "I", "", 0, 0
-        )
+        msgOut(0, "  Purging existing temp DB for reference data :" + dbname, "I", "", 0, 0)
         os.remove(dbname)
     else:
         msgOut(0, "  Initializing temp DB for reference data:" + dbname, "I", "", 0, 0)
@@ -1981,8 +1855,7 @@ if __name__ == "__main__":
     )
     msgOut(
         0,
-        "     NPI_DEACTIVE JSON rows produced       : "
-        + str(NPIDeactivated_row_count),
+        "     NPI_DEACTIVE JSON rows produced       : " + str(NPIDeactivated_row_count),
         "I",
         "",
         0,
@@ -1990,8 +1863,7 @@ if __name__ == "__main__":
     )
     msgOut(
         0,
-        "     NPI-Affiliations JSON rows produced   : "
-        + str(NPIAffiliations_row_count),
+        "     NPI-Affiliations JSON rows produced   : " + str(NPIAffiliations_row_count),
         "I",
         "",
         0,
@@ -2006,9 +1878,7 @@ if __name__ == "__main__":
 
     elapsedMins = round((time.time() - procStartTime) / 60, 1)
     if shutDown:
-        msgOut(
-            0, " Process aborted after " + str(elapsedMins) + " minutes!", "I", "", 0, 0
-        )
+        msgOut(0, " Process aborted after " + str(elapsedMins) + " minutes!", "I", "", 0, 0)
     else:
         msgOut(
             0,
