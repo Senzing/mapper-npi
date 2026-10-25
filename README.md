@@ -53,7 +53,7 @@ options:
 
 ### Prerequisites
 
-- python 3.10 or higher (the `--help` text above is what argparse prints on 3.10+; CI runs 3.10-3.13)
+- python 3.11 or higher (the `--help` text above is what argparse prints on 3.10+; CI runs 3.11-3.13)
 - Senzing API version 2.1 or higher
 - pandas (pip3 install pandas)
 
@@ -63,6 +63,13 @@ Place the following files on a directory of your choice ...
 
 - [npi_mapper.py]
 - [npi_config_updates.g2c]
+
+### Secondary practice locations
+
+The secondary practice locations (`pl_pfile`) are carried on the provider itself: each location's address as an extra
+`ADDR_TYPE: SECONDARY` address (once, and not when it repeats an address the provider already has) and its telephone and fax
+numbers as `PHONE_NUMBER` features (a fax keeps `PHONE_TYPE: FAX`). The nameless `NPI-LOCATIONS` records are no longer written;
+`--locationRecords` writes them as well.
 
 ### Configuring Senzing
 
