@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The `Employer Identification Number (EIN)` column is mapped for organizations as the canonical `TAX_ID`
+  (`TAX_ID_TYPE` `EIN`, `TAX_ID_COUNTRY` `US`). Only a well-formed 9-digit value is emitted; the public file's `<UNAVAIL>`
+  redaction and the CMS masks are skipped. Tests in `tests/test_identifiers.py`.
 - Secondary practice locations (`pl_pfile`) are carried on the provider: each address as an extra `ADDR_TYPE: SECONDARY` address
   (deduplicated against the provider's own) and each telephone and fax number as `PHONE_NUMBER` features. Tests in
   `tests/test_secondary_locations.py`.
@@ -26,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README's configuration step uses the Senzing v4 `sz_configtool -f`; the `.g2c` applies cleanly on Senzing 4.4.3.
 - The nameless `NPI-LOCATIONS` records are no longer written by default (their addresses and numbers are on the provider);
   `--locationRecords` writes them as before.
 - `NPI-AFFILIATIONS` records are now clustered by ER content. `er_record_id()` derives the
@@ -73,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Taxonomy Group_n` de-duplication is keyed on the group value instead of the column name, so a group repeated in a
+  later column is no longer emitted twice.
 - Read `Provider Sex Code` (NPPES renamed `Provider Gender Code`), falling back to the old name;
   the mapper previously raised `KeyError` on the first row of 2025+ dissemination files and
   produced no output.

@@ -245,6 +245,22 @@ OTHER_LAST_NAME_TYPE_CODES = {
 OTHER_PROVIDER_TYPE_CODES = {"01": "OTHER", "05": "MEDICAID"}
 
 
+#  US Employer Identification Number: 9 digits, conventionally written NN-NNNNNNN.
+EIN_PATTERN = re.compile(r"[0-9]{2}-?[0-9]{7}")
+
+
+def ein_value(raw):
+    """The EIN to emit from the NPPES "Employer Identification Number (EIN)" column, or "".
+
+    The public dissemination file redacts this column ("<UNAVAIL>"), and CMS masks a
+    self-reported EIN as "=========", so only a well-formed 9-digit value (with or without the
+    hyphen) is an identifier; anything else is a non-value and is skipped. The value is kept as
+    the source wrote it -- the engine standardizes the punctuation.
+    """
+    value = (raw or "").strip()
+    return value if EIN_PATTERN.fullmatch(value) else ""
+
+
 def provider_id_issuer(type_code, issuer_text):
     """Issuer for a PROVIDER_ID: the reported issuer, else the type code's meaning.
 
@@ -814,6 +830,16 @@ def map_npi(input_row):
     for npi_value in npi_values:
         add_feature(features, {"REF_NPI_ID": npi_value})
 
+    # EIN: the organization's US Employer Identification Number, as the canonical TAX_ID
+    # (Entity Spec "Identifiers > Feature: TAX_ID": TAX_ID_TYPE EIN, TAX_ID_COUNTRY US). Only an
+    # organization (Entity Type Code 2) carries an EIN in NPPES. Organization subparts report
+    # their parent's EIN, so several NPIs can share one; TAX_ID is still the right feature,
+    # because REF_NPI_ID (A1ES) is what keeps two distinct NPIs apart, not the tax id.
+    ein = ein_value(input_row.get("Employer Identification Number (EIN)")) if entity_type == "2" else ""
+    if ein:
+        updateStat(json_data["DATA_SOURCE"], "TAX_ID-EIN")  # counted only: a tax id is not a stats example
+        add_feature(features, {"TAX_ID_TYPE": "EIN", "TAX_ID_NUMBER": ein, "TAX_ID_COUNTRY": "US"})
+
     #  define anchor point for disclosed relationships back to this NPI from NPI-LOCATIONS, NPI-AFFILIATES, and NPI-OFFICIALS
     add_feature(
         features,
@@ -1128,7 +1154,7 @@ def map_npi(input_row):
             input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
             and input_row["Healthcare Provider Taxonomy Group_" + str(looper)] not in txnmyGrp_Mapped
         ):
-            txnmyGrp_Mapped["Healthcare Provider Taxonomy Group_" + str(looper)] = True
+            txnmyGrp_Mapped[input_row["Healthcare Provider Taxonomy Group_" + str(looper)]] = True
             # --jb: moved to jsondata as payload attributes cannot be in a sublist, which is why they are numbered.
             # txnmyGrp.append({"TAXONOMY_GRP": input_row['Healthcare Provider Taxonomy Group_' + str(looper)]})
             json_data["Taxonomy Group_" + str(looper)] = input_row["Healthcare Provider Taxonomy Group_" + str(looper)]
