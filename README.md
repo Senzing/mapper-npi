@@ -68,15 +68,30 @@ The secondary practice locations (`pl_pfile`) are carried on the provider itself
 numbers as `PHONE_NUMBER` features (a fax keeps `PHONE_TYPE: FAX`). The nameless `NPI-LOCATIONS` records are no longer written;
 `--locationRecords` writes them as well.
 
+### Identifiers
+
+| NPPES column | Senzing feature | Notes |
+| --- | --- | --- |
+| `NPI`, `Replacement NPI` | `NPI_NUMBER` and `REF_NPI_ID` | `REF_NPI_ID` (custom, `A1ES`) keeps distinct NPIs apart |
+| `Employer Identification Number (EIN)` | `TAX_ID` with `TAX_ID_TYPE` `EIN`, `TAX_ID_COUNTRY` `US` | organizations only, and only a 9-digit value |
+| `Provider License Number_n` / `State Code_n` | `PROVIDER_LICENSE` (custom) | `PROVIDER_LICENSE_NUMBER`, `PROVIDER_LICENSE_STATE` |
+| `Other Provider Identifier_n` / `Type Code_n` / `State_n` / `Issuer_n` | `PROVIDER_ID` (custom) | `PROVIDER_ID_NUMBER`, `PROVIDER_ID_STATE`, `PROVIDER_ID_ISSUER` |
+
+The public NPPES file redacts the EIN column (`<UNAVAIL>`), so `TAX_ID` appears only when the mapper is run over a file that
+carries it. `TAX_ID` is a stock Senzing feature and needs no configuration.
+
 ### Configuring Senzing
 
 _Note:_ This only needs to be performed one time! In fact you may want to add these configuration updates to a master configuration file for all your data sources.
 
-From your Senzing project directory:
+From your Senzing project directory (Senzing v4; verified on 4.4.3):
 
 ```console
-python3 G2ConfigTool.py <path-to-file>/npi_config_updates.g2c
+sz_configtool -f <path-to-file>/npi_config_updates.g2c
 ```
+
+`-f` processes every command in the file without a confirmation prompt (on Senzing v3 and earlier the tool was
+`G2ConfigTool.py`).
 
 This will step you through the process of adding the data sources, features, attributes and any other settings needed to load this watch list data into
 Senzing. After each command you will see a status message saying "success" or "already exists". For instance, if you run the script twice, the second time through they will all
