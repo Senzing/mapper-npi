@@ -30,7 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The README's configuration step uses the Senzing v4 `sz_configtool -f`; the `.g2c` applies cleanly on Senzing 4.4.3.
-
 - The nameless `NPI-LOCATIONS` records are no longer written by default (their addresses and numbers are on the provider);
   `--locationRecords` writes them as before.
 - `NPI-AFFILIATIONS` records are now clustered by ER content. `er_record_id()` derives the

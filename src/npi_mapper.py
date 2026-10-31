@@ -246,7 +246,7 @@ OTHER_PROVIDER_TYPE_CODES = {"01": "OTHER", "05": "MEDICAID"}
 
 
 #  US Employer Identification Number: 9 digits, conventionally written NN-NNNNNNN.
-EIN_PATTERN = re.compile(r"\d{2}-?\d{7}")
+EIN_PATTERN = re.compile(r"[0-9]{2}-?[0-9]{7}")
 
 
 def ein_value(raw):
@@ -837,7 +837,7 @@ def map_npi(input_row):
     # because REF_NPI_ID (A1ES) is what keeps two distinct NPIs apart, not the tax id.
     ein = ein_value(input_row.get("Employer Identification Number (EIN)")) if entity_type == "2" else ""
     if ein:
-        updateStat(json_data["DATA_SOURCE"], "TAX_ID-EIN", ein)
+        updateStat(json_data["DATA_SOURCE"], "TAX_ID-EIN")  # counted only: a tax id is not a stats example
         add_feature(features, {"TAX_ID_TYPE": "EIN", "TAX_ID_NUMBER": ein, "TAX_ID_COUNTRY": "US"})
 
     #  define anchor point for disclosed relationships back to this NPI from NPI-LOCATIONS, NPI-AFFILIATES, and NPI-OFFICIALS
