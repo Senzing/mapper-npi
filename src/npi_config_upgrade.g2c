@@ -1,0 +1,18 @@
+# Upgrade an instance configured with the previous npi_config_updates.g2c (before PROVIDER_ID,
+# REF_NPI_ID and NPI_DEACTIVE). Contains ONLY the commands new since then: `sz_configtool -f` stops
+# at the first command that fails (e.g. "already exists") and saves nothing, so re-running the full
+# npi_config_updates.g2c on an existing instance does not apply the new commands. For a fresh
+# configuration use npi_config_updates.g2c instead. OTHER_PROVIDER_ID and MEDICAID_PROVIDER_ID are
+# deliberately left registered: deleting a feature that has data loaded against it is not safe.
+addDataSource NPI_DEACTIVE
+
+addFeature {"feature": "PROVIDER_ID", "class": "ISSUED_ID", "behavior": "FF", "anonymize": "No", "candidates": "Yes", "standardize": "PARSE_ID", "expression": "EXPRESS_ID", "comparison": "ID_COMP", "elementList": [{"element": "ID_NUM", "expressed": "No", "compared": "No"}, {"element": "STATE", "expressed": "No", "compared": "Yes"}, {"element": "ID_NUM_STD", "expressed": "Yes", "compared": "Yes"}, {"element": "ISSUER", "expressed": "No", "compared": "Yes"}]}
+addAttribute {"attribute": "PROVIDER_ID_NUMBER", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "ID_NUM", "required": "Yes", "default": "", "advanced": "No", "internal": "No"}
+addAttribute {"attribute": "PROVIDER_ID_STATE", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "STATE", "required": "Desired", "default": "", "advanced": "No", "internal": "No"}
+addAttribute {"attribute": "PROVIDER_ID_ISSUER", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "ISSUER", "required": "Desired", "default": "", "advanced": "No", "internal": "No"}
+
+# REF_NPI_ID -- see npi_config_updates.g2c for why it is A1ES and why templateAdd/GLOBAL_ID is used.
+templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES"}
+getFeature REF_NPI_ID
+
+save
