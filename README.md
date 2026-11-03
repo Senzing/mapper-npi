@@ -61,6 +61,7 @@ Place the following files on a directory of your choice ...
 - [npi_mapper.py]
 - [npi_config_updates.g2c]
 - [npi_config_upgrade.g2c] (only to upgrade an instance configured by an earlier version)
+- [npi_config_upgrade_exact_comp.g2c] (only to upgrade an instance whose `REF_NPI_ID` is compared fuzzily)
 
 ### Secondary practice locations
 
@@ -116,6 +117,27 @@ It adds the `NPI_DEACTIVE` data source, `PROVIDER_ID` (behavior `FF`, with `ISSU
 separate `OTHER_PROVIDER_ID` and `MEDICAID_PROVIDER_ID` features, and `REF_NPI_ID` (behavior `A1ES`). The features it
 replaces are deliberately left registered: deleting a feature from a configuration that already has data loaded against it
 is not safe. Verified on 4.4.3 against a configuration built from the previous `npi_config_updates.g2c`.
+
+#### Upgrading `REF_NPI_ID` to an exact comparison
+
+`REF_NPI_ID` is now compared exactly (`EXACT_COMP`). It was first registered with the fuzzy default
+(`ID_COMP`), which scores neighbouring NPIs as close. Which file to apply depends on where the instance is:
+
+| The instance's configuration came from | Apply |
+| --- | --- |
+| Nothing yet (a fresh configuration) | `npi_config_updates.g2c` |
+| A version before `REF_NPI_ID` existed | `npi_config_upgrade.g2c` (already compares exactly) |
+| A version with `REF_NPI_ID` compared by `ID_COMP` | [npi_config_upgrade_exact_comp.g2c] |
+
+To see which you have, run `getComparisonCall REF_NPI_ID` in `sz_configtool`: `"function": "ID_COMP"` means apply
+the exact-comparison upgrade.
+
+```console
+sz_configtool -f <path-to-file>/npi_config_upgrade_exact_comp.g2c
+```
+
+Already-resolved entities keep their current resolution until they are re-evaluated; reload or reevaluate the NPI
+records to apply the new comparison to them. Verified on 4.4.3.
 
 The `RECORD_ID` scheme also changed for `NPI-LOCATIONS` and `NPI-AFFILIATIONS` -- both are now
 derived from record content rather than a row ordinal. Senzing keys records on
@@ -198,6 +220,7 @@ While not required, look for the following identifiers in your other data sets:
 [Mapping other data sources]: #mapping-other-data-sources
 [npi_config_updates.g2c]: src/npi_config_updates.g2c
 [npi_config_upgrade.g2c]: src/npi_config_upgrade.g2c
+[npi_config_upgrade_exact_comp.g2c]: src/npi_config_upgrade_exact_comp.g2c
 [npi_mapper.py]: src/npi_mapper.py
 [Prerequisites]: #prerequisites
 [Running the mapper]: #running-the-mapper

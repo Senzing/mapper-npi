@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `REF_NPI_ID` is compared exactly (`EXACT_COMP`) instead of with the fuzzy default `ID_COMP`, so
-  neighbouring NPIs never score as close.
+  neighbouring NPIs never score as close. An instance already configured with the fuzzy comparison is upgraded by
+  the new `npi_config_upgrade_exact_comp.g2c`; the README says which file applies to which instance.
 
 ### Added
 
