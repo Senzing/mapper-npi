@@ -73,7 +73,7 @@ numbers as `PHONE_NUMBER` features (a fax keeps `PHONE_TYPE: FAX`). The nameless
 
 | NPPES column | Senzing feature | Notes |
 | --- | --- | --- |
-| `NPI`, `Replacement NPI` | `NPI_NUMBER` and `REF_NPI_ID` | `REF_NPI_ID` (custom, `A1ES`) keeps distinct NPIs apart |
+| `NPI`, `Replacement NPI` | `NPI_NUMBER` and `REF_NPI_ID` | `REF_NPI_ID` (custom, `A1ES`, compared exactly) keeps distinct NPIs apart |
 | `Employer Identification Number (EIN)` | `TAX_ID` with `TAX_ID_TYPE` `EIN`, `TAX_ID_COUNTRY` `US` | organizations only, and only a 9-digit value |
 | `Provider License Number_n` / `State Code_n` | `PROVIDER_LICENSE` (custom) | `PROVIDER_LICENSE_NUMBER`, `PROVIDER_LICENSE_STATE` |
 | `Other Provider Identifier_n` / `Type Code_n` / `State_n` / `Issuer_n` | `PROVIDER_ID` (custom) | `PROVIDER_ID_NUMBER`, `PROVIDER_ID_STATE`, `PROVIDER_ID_ISSUER` |

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `REF_NPI_ID` is compared exactly (`EXACT_COMP`) instead of with the fuzzy default `ID_COMP`, so
+  neighbouring NPIs never score as close.
+
 ### Added
 
 - The `Employer Identification Number (EIN)` column is mapped for organizations as the canonical `TAX_ID`

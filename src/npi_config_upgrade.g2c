@@ -12,7 +12,7 @@ addAttribute {"attribute": "PROVIDER_ID_STATE", "class": "IDENTIFIER", "feature"
 addAttribute {"attribute": "PROVIDER_ID_ISSUER", "class": "IDENTIFIER", "feature": "PROVIDER_ID", "element": "ISSUER", "required": "Desired", "default": "", "advanced": "No", "internal": "No"}
 
 # REF_NPI_ID -- see npi_config_updates.g2c for why it is A1ES and why templateAdd/GLOBAL_ID is used.
-templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES"}
+templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES", "comparison": "EXACT_COMP"}
 getFeature REF_NPI_ID
 
 save
