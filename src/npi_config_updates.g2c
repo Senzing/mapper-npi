@@ -28,7 +28,8 @@ addAttribute {"attribute": "PROVIDER_ID_ISSUER", "class": "IDENTIFIER", "feature
 # Deliberately identical in shape to BQ_ID. templateAdd/GLOBAL_ID is used rather than a hand-rolled
 # addFeature because it is the recipe that decomposes A1ES correctly into FREQ=A1/EXCL=Yes/STAB=Yes;
 # hand-rolled A1ES definitions are the documented way to end up with a feature that silently misbehaves.
-templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES"}
+# Compared exactly: the template default ID_COMP is fuzzy and scores neighbouring ids as close.
+templateAdd {"feature": "REF_NPI_ID", "template": "GLOBAL_ID", "behavior": "A1ES", "comparison": "EXACT_COMP"}
 getFeature REF_NPI_ID
 
 save

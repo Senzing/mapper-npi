@@ -60,6 +60,8 @@ Place the following files on a directory of your choice ...
 
 - [npi_mapper.py]
 - [npi_config_updates.g2c]
+- [npi_config_upgrade.g2c] (only to upgrade an instance configured by an earlier version)
+- [npi_config_upgrade_exact_comp.g2c] (only to upgrade an instance whose `REF_NPI_ID` is compared fuzzily)
 
 ### Secondary practice locations
 
@@ -68,27 +70,74 @@ The secondary practice locations (`pl_pfile`) are carried on the provider itself
 numbers as `PHONE_NUMBER` features (a fax keeps `PHONE_TYPE: FAX`). The nameless `NPI-LOCATIONS` records are no longer written;
 `--locationRecords` writes them as well.
 
+### Identifiers
+
+| NPPES column | Senzing feature | Notes |
+| --- | --- | --- |
+| `NPI`, `Replacement NPI` | `NPI_NUMBER` and `REF_NPI_ID` | `REF_NPI_ID` (custom, `A1ES`, compared exactly) keeps distinct NPIs apart |
+| `Employer Identification Number (EIN)` | `TAX_ID` with `TAX_ID_TYPE` `EIN`, `TAX_ID_COUNTRY` `US` | organizations only, and only a 9-digit value |
+| `Provider License Number_n` / `State Code_n` | `PROVIDER_LICENSE` (custom) | `PROVIDER_LICENSE_NUMBER`, `PROVIDER_LICENSE_STATE` |
+| `Other Provider Identifier_n` / `Type Code_n` / `State_n` / `Issuer_n` | `PROVIDER_ID` (custom) | `PROVIDER_ID_NUMBER`, `PROVIDER_ID_STATE`, `PROVIDER_ID_ISSUER` |
+
+The public NPPES file redacts the EIN column (`<UNAVAIL>`), so `TAX_ID` appears only when the mapper is run over a file that
+carries it. `TAX_ID` is a stock Senzing feature and needs no configuration.
+
 ### Configuring Senzing
 
 _Note:_ This only needs to be performed one time! In fact you may want to add these configuration updates to a master configuration file for all your data sources.
 
-From your Senzing project directory:
+From your Senzing project directory (Senzing v4; verified on 4.4.3):
 
 ```console
-python3 G2ConfigTool.py <path-to-file>/npi_config_updates.g2c
+sz_configtool -f <path-to-file>/npi_config_updates.g2c
 ```
 
-This will step you through the process of adding the data sources, features, attributes and any other settings needed to load this watch list data into
-Senzing. After each command you will see a status message saying "success" or "already exists". For instance, if you run the script twice, the second time through they will all
-say "already exists" which is OK.
+`-f` processes every command in the file without a confirmation prompt (on Senzing v3 and earlier the tool was
+`G2ConfigTool.py`).
+
+This adds the data sources, features, attributes and any other settings needed to load the NPI data into Senzing, printing a
+status line after each command, and saves the configuration at the end.
+
+Run it once, on a configuration that does not have these settings yet. On a re-run (verified on 4.4.3) a data source or
+feature that already exists is reported as "already exists" and skipped, but the first `addAttribute` that already exists
+is an error: `sz_configtool -f` stops at that command, exits non-zero and saves nothing. The configuration is left as it was,
+so a re-run is harmless, but it also applies nothing new.
 
 #### Upgrading from an earlier mapper version
 
-Re-run [npi_config_updates.g2c] on an existing instance. It now registers `PROVIDER_ID`
-(behavior `FF`, with `ISSUER` compared), which consolidates the separate `OTHER_PROVIDER_ID`
-and `MEDICAID_PROVIDER_ID` features, and `REF_NPI_ID` (behavior `A1ES`). The features it
-replaces are deliberately left registered: deleting a feature from a configuration that
-already has data loaded against it is not safe.
+Do not re-run `npi_config_updates.g2c` on an instance configured by an earlier version: it stops at the first existing
+attribute (see above) and never reaches the new commands. Apply [npi_config_upgrade.g2c] instead, which holds only the commands
+added since the previous version:
+
+```console
+sz_configtool -f <path-to-file>/npi_config_upgrade.g2c
+```
+
+It adds the `NPI_DEACTIVE` data source, `PROVIDER_ID` (behavior `FF`, with `ISSUER` compared), which consolidates the
+separate `OTHER_PROVIDER_ID` and `MEDICAID_PROVIDER_ID` features, and `REF_NPI_ID` (behavior `A1ES`). The features it
+replaces are deliberately left registered: deleting a feature from a configuration that already has data loaded against it
+is not safe. Verified on 4.4.3 against a configuration built from the previous `npi_config_updates.g2c`.
+
+#### Upgrading `REF_NPI_ID` to an exact comparison
+
+`REF_NPI_ID` is now compared exactly (`EXACT_COMP`). It was first registered with the fuzzy default
+(`ID_COMP`), which scores neighbouring NPIs as close. Which file to apply depends on where the instance is:
+
+| The instance's configuration came from | Apply |
+| --- | --- |
+| Nothing yet (a fresh configuration) | `npi_config_updates.g2c` |
+| A version before `REF_NPI_ID` existed | `npi_config_upgrade.g2c` (already compares exactly) |
+| A version with `REF_NPI_ID` compared by `ID_COMP` | [npi_config_upgrade_exact_comp.g2c] |
+
+To see which you have, run `getComparisonCall REF_NPI_ID` in `sz_configtool`: `"function": "ID_COMP"` means apply
+the exact-comparison upgrade.
+
+```console
+sz_configtool -f <path-to-file>/npi_config_upgrade_exact_comp.g2c
+```
+
+Already-resolved entities keep their current resolution until they are re-evaluated; reload or reevaluate the NPI
+records to apply the new comparison to them. Verified on 4.4.3.
 
 The `RECORD_ID` scheme also changed for `NPI-LOCATIONS` and `NPI-AFFILIATIONS` -- both are now
 derived from record content rather than a row ordinal. Senzing keys records on
@@ -170,6 +219,8 @@ While not required, look for the following identifiers in your other data sets:
 [Loading into Senzing]: #loading-into-senzing
 [Mapping other data sources]: #mapping-other-data-sources
 [npi_config_updates.g2c]: src/npi_config_updates.g2c
+[npi_config_upgrade.g2c]: src/npi_config_upgrade.g2c
+[npi_config_upgrade_exact_comp.g2c]: src/npi_config_upgrade_exact_comp.g2c
 [npi_mapper.py]: src/npi_mapper.py
 [Prerequisites]: #prerequisites
 [Running the mapper]: #running-the-mapper

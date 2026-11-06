@@ -1,0 +1,13 @@
+# Upgrade an instance whose REF_NPI_ID was registered with the fuzzy default comparison (ID_COMP), i.e. one
+# configured by npi_config_updates.g2c or npi_config_upgrade.g2c before REF_NPI_ID was compared exactly.
+# ID_COMP scores neighbouring NPIs as close; an exclusive (A1ES) id must only ever match itself. This swaps
+# the comparison call to EXACT_COMP; the feature and its loaded values are unchanged.
+#
+# Apply ONLY to such an instance: on one that already compares REF_NPI_ID exactly it is a no-op change, and on
+# one without REF_NPI_ID use npi_config_upgrade.g2c instead. Entities are re-scored as they are re-evaluated
+# (a reload, or reevaluating the NPI records); until then existing resolutions stand.
+deleteComparisonCall REF_NPI_ID
+addComparisonCall {"feature": "REF_NPI_ID", "function": "EXACT_COMP", "elementList": ["ID_NUM_STD"]}
+getComparisonCall REF_NPI_ID
+
+save
