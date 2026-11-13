@@ -8,8 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `REF_NPI_ID` is compared exactly (`EXACT_COMP`) instead of with the fuzzy default `ID_COMP`, so
+  neighbouring NPIs never score as close. An instance already configured with the fuzzy comparison is upgraded by
+  the new `npi_config_upgrade_exact_comp.g2c`; the README says which file applies to which instance.
+
 ### Added
 
+- The `Employer Identification Number (EIN)` column is mapped for organizations as the canonical `TAX_ID`
+  (`TAX_ID_TYPE` `EIN`, `TAX_ID_COUNTRY` `US`). Only a well-formed 9-digit value is emitted; the public file's `<UNAVAIL>`
+  redaction and the CMS masks are skipped. Tests in `tests/test_identifiers.py`.
+- `src/npi_config_upgrade.g2c` upgrades an instance configured by the previous `npi_config_updates.g2c`: it holds only the
+  commands added since (`NPI_DEACTIVE`, `PROVIDER_ID` and its attributes, `REF_NPI_ID`). Re-running the full file does not
+  work as an upgrade, because `sz_configtool -f` stops at the first attribute that already exists and saves nothing.
 - Secondary practice locations (`pl_pfile`) are carried on the provider: each address as an extra `ADDR_TYPE: SECONDARY` address
   (deduplicated against the provider's own) and each telephone and fax number as `PHONE_NUMBER` features. Tests in
   `tests/test_secondary_locations.py`.
@@ -26,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README's configuration step uses the Senzing v4 `sz_configtool -f`; the `.g2c` applies cleanly to a fresh
+  configuration on Senzing 4.4.3. The README no longer claims a re-run reports "already exists" for every command, and its
+  upgrade section points at `npi_config_upgrade.g2c` instead of a re-run.
 - The nameless `NPI-LOCATIONS` records are no longer written by default (their addresses and numbers are on the provider);
   `--locationRecords` writes them as before.
 - `NPI-AFFILIATIONS` records are now clustered by ER content. `er_record_id()` derives the
@@ -73,6 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Taxonomy Group_n` de-duplication is keyed on the group value instead of the column name, so a group repeated in a
+  later column is no longer emitted twice.
 - Read `Provider Sex Code` (NPPES renamed `Provider Gender Code`), falling back to the old name;
   the mapper previously raised `KeyError` on the first row of 2025+ dissemination files and
   produced no output.
@@ -97,8 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on (`DATA_SOURCE`, `RECORD_ID`), so re-loading these outputs onto an existing repository leaves
   the previously loaded copies behind as duplicates. Purge those two data sources before the
   re-load.
-- Re-run `npi_config_updates.g2c` on existing instances to register `PROVIDER_ID` and
-  `REF_NPI_ID`. The features `PROVIDER_ID` supersedes are left registered on purpose: deleting a
+- Apply `npi_config_upgrade.g2c` (not a re-run of `npi_config_updates.g2c`) on existing instances to register
+  `NPI_DEACTIVE`, `PROVIDER_ID` and `REF_NPI_ID`. The features `PROVIDER_ID` supersedes are left registered on purpose: deleting a
   feature from a configuration that already has data loaded against it is not safe.
 
 ## [1.0.1] - yyyy-mm-dd
